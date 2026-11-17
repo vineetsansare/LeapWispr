@@ -11,6 +11,7 @@ public final class DictationCoordinator: ObservableObject {
     private let settings = AppSettings.shared
     private let textInjector = TextInjector.shared
     private let pillHUD = FloatingPillHUD.shared
+    private let speechProvider = AppleSpeechSTTProvider()
     
     private var currentAppContext: ActiveAppContext?
     private var activeTone: ToneType = .professional
@@ -55,9 +56,21 @@ public final class DictationCoordinator: ObservableObject {
             self.activeTone = settings.selectedTone
         }
         
-        // 3. Start audio capture
+        // 3. Start audio capture and live streaming recognition
         do {
             try audioManager.startRecording()
+            
+            // Start real-time live transcript streaming to the Floating Pill HUD
+            try? speechProvider.startLiveRecognition { [weak self] liveText in
+                DispatchQueue.main.async {
+                    self?.pillHUD.updateLiveTranscript(liveText)
+                }
+            }
+            
+            // Pipe audio buffer stream to speech recognizer
+            audioManager.onAudioBuffer = { [weak self] buffer in
+                self?.speechProvider.appendLiveAudioBuffer(buffer)
+            }
             
             if settings.soundFeedback {
                 NSSound(named: "Tink")?.play()
@@ -74,19 +87,26 @@ public final class DictationCoordinator: ObservableObject {
     public func stopAndProcessDictation() {
         guard audioManager.isRecording else { return }
         
+        // Stop live recognition stream and get transcript
+        let liveTranscript = speechProvider.stopLiveRecognition()
+        audioManager.onAudioBuffer = nil
         let duration = audioManager.recordingDuration
+        
         guard let audioURL = audioManager.stopRecording() else {
-            pillHUD.hide()
+            pillHUD.hideImmediately()
             return
         }
         
-        pillHUD.update(status: .processing("Transcribing..."), tone: activeTone)
+        pillHUD.update(status: .processing("Polishing with \(activeTone.displayName)..."), tone: activeTone)
         
         Task {
             do {
-                // 1. Speech to Text
-                let sttProvider = getSTTProvider()
-                let rawTranscript = try await sttProvider.transcribe(audioURL: audioURL)
+                // 1. Get Speech Transcript (instant from live buffer, or fallback to file transcription)
+                var rawTranscript = liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+                if rawTranscript.isEmpty {
+                    let sttProvider = getSTTProvider()
+                    rawTranscript = try await sttProvider.transcribe(audioURL: audioURL)
+                }
                 
                 guard !rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     await MainActor.run {
@@ -96,11 +116,7 @@ public final class DictationCoordinator: ObservableObject {
                     return
                 }
                 
-                await MainActor.run {
-                    self.pillHUD.update(status: .processing("Polishing with \(self.activeTone.displayName)..."), tone: self.activeTone)
-                }
-                
-                // 2. LLM Tone Transformation
+                // 2. LLM Tone Transformation (Gemini Flash or High-Quality Heuristic)
                 let appContext = self.currentAppContext ?? self.contextInspector.getCurrentAppContext()
                 let polishedText = try await ToneTransformService.shared.transform(
                     rawTranscript: rawTranscript,
@@ -111,8 +127,7 @@ public final class DictationCoordinator: ObservableObject {
                 
                 // 3. Inject Text into active cursor field
                 await MainActor.run {
-                    // Immediately hide the floating HUD synchronously so WindowServer
-                    // returns 100% focused key responder state back to the target editor
+                    // Synchronously dismiss HUD so WindowServer restores 100% key responder focus
                     self.pillHUD.hideImmediately()
                 }
                 
@@ -153,11 +168,14 @@ public final class DictationCoordinator: ObservableObject {
     }
     
     public func cancelDictation() {
+        _ = speechProvider.stopLiveRecognition()
+        audioManager.onAudioBuffer = nil
+        
         guard audioManager.isRecording else { return }
         if let audioURL = audioManager.stopRecording() {
             try? FileManager.default.removeItem(at: audioURL)
         }
-        pillHUD.hide()
+        pillHUD.hideImmediately()
     }
     
     public func cycleToNextTone() {
@@ -166,7 +184,7 @@ public final class DictationCoordinator: ObservableObject {
             let nextIndex = (currentIndex + 1) % allTones.count
             activeTone = allTones[nextIndex]
             settings.selectedTone = activeTone
-            pillHUD.update(status: .listening, tone: activeTone)
+            pillHUD.update(status: FloatingPillState.shared.status, tone: activeTone)
         }
     }
     
@@ -176,10 +194,10 @@ public final class DictationCoordinator: ObservableObject {
             if !settings.groqApiKey.isEmpty {
                 return CloudGroqSTTProvider(apiKey: settings.groqApiKey)
             }
-            return AppleSpeechSTTProvider()
+            return speechProvider
             
         case .appleSpeech, .customEndpoint:
-            return AppleSpeechSTTProvider()
+            return speechProvider
         }
     }
 }

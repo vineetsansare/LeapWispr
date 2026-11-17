@@ -12,41 +12,55 @@ public enum HUDStatus: Equatable {
 public struct FloatingPillView: View {
     @ObservedObject var settings = AppSettings.shared
     @ObservedObject var audioManager = AudioEngineManager.shared
-    
-    let status: HUDStatus
-    let currentTone: ToneType
-    let onToneTap: () -> Void
-    let onCancelTap: () -> Void
-    let onStopTap: () -> Void
+    @ObservedObject var pillState = FloatingPillState.shared
     
     public var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             // Status Icon / Waveform
             statusIconView
             
-            // Status or Live Waveform
-            switch status {
+            // Middle Content: Waveform + Live Transcript
+            switch pillState.status {
             case .listening:
-                WaveformBarsView(level: audioManager.audioLevel)
-                    .frame(width: 48, height: 18)
-                
-                // Done & Insert Button right on the pill
-                Button(action: onStopTap) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 13, weight: .bold))
-                        Text("Done")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                HStack(spacing: 8) {
+                    WaveformBarsView(level: audioManager.audioLevel)
+                        .frame(width: 36, height: 16)
+                    
+                    // Live Transcript Preview Area
+                    if pillState.liveTranscript.isEmpty {
+                        Text("Listening...")
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .opacity(0.85)
+                    } else {
+                        HStack(spacing: 3) {
+                            Text(pillState.liveTranscript)
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.head)
+                                .frame(maxWidth: 240, alignment: .leading)
+                            
+                            BlinkingCaretView()
+                        }
                     }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule().fill(Color.blue)
-                    )
+                    
+                    // Done & Insert Button
+                    Button(action: { pillState.onStopRequested?() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 10, weight: .bold))
+                            Text("Done")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                        }
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(Color.blue))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Stop dictating and insert text")
                 }
-                .buttonStyle(.plain)
-                .help("Stop dictating and insert text")
                 
             case .processing(let message):
                 HStack(spacing: 6) {
@@ -56,6 +70,7 @@ public struct FloatingPillView: View {
                     Text(message)
                         .font(.system(size: 12, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 
             case .success(let message):
@@ -86,32 +101,31 @@ public struct FloatingPillView: View {
             
             Divider()
                 .frame(height: 16)
-                .opacity(0.5)
+                .opacity(0.4)
             
             // Interactive Tone Badge
-            Button(action: onToneTap) {
-                HStack(spacing: 5) {
-                    Text(currentTone.emoji)
-                        .font(.system(size: 12))
-                    Text(currentTone.displayName)
+            Button(action: { pillState.onToneCycleRequested?() }) {
+                HStack(spacing: 4) {
+                    Text(pillState.currentTone.emoji)
+                        .font(.system(size: 11))
+                    Text(pillState.currentTone.displayName)
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 7, weight: .bold))
                         .foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
-                    Capsule()
-                        .fill(Color.primary.opacity(0.08))
+                    Capsule().fill(Color.primary.opacity(0.08))
                 )
             }
             .buttonStyle(.plain)
             .help("Click to change tone")
             
             // Cancel Button
-            if status == .listening {
-                Button(action: onCancelTap) {
+            if pillState.status == .listening {
+                Button(action: { pillState.onCancelRequested?() }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 14))
                         .foregroundStyle(.secondary)
@@ -125,17 +139,19 @@ public struct FloatingPillView: View {
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
+                .shadow(color: .black.opacity(0.2), radius: 14, x: 0, y: 6)
                 .overlay(
                     Capsule()
-                        .strokeBorder(Color.white.opacity(0.25), lineWidth: 0.8)
+                        .strokeBorder(Color.white.opacity(0.28), lineWidth: 0.8)
                 )
         )
+        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: pillState.liveTranscript)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: pillState.status)
     }
     
     @ViewBuilder
     private var statusIconView: some View {
-        switch status {
+        switch pillState.status {
         case .listening:
             Circle()
                 .fill(Color.red)
@@ -168,6 +184,24 @@ public struct FloatingPillView: View {
                 .fill(Color.gray.opacity(0.5))
                 .frame(width: 8, height: 8)
         }
+    }
+}
+
+// Blinking caret for live transcription
+public struct BlinkingCaretView: View {
+    @State private var isVisible = true
+    
+    public init() {}
+    
+    public var body: some View {
+        Rectangle()
+            .fill(Color.blue)
+            .frame(width: 2, height: 13)
+            .opacity(isVisible ? 1.0 : 0.0)
+            .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isVisible)
+            .onAppear {
+                isVisible = false
+            }
     }
 }
 

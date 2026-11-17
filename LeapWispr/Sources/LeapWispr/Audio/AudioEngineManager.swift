@@ -15,6 +15,9 @@ public final class AudioEngineManager: NSObject, ObservableObject {
     private var audioFile: AVAudioFile?
     private(set) public var currentRecordingURL: URL?
     
+    /// Optional stream callback for live buffer recognition (e.g. SFSpeechAudioBufferRecognitionRequest)
+    public var onAudioBuffer: (@Sendable (AVAudioPCMBuffer) -> Void)?
+    
     private var recordingStartTime: Date?
     
     public var recordingDuration: TimeInterval {
@@ -147,6 +150,9 @@ public final class AudioEngineManager: NSObject, ObservableObject {
             if let audioFile = self.audioFile {
                 try? audioFile.write(from: buffer)
             }
+            
+            // 3. Dispatch to live streaming recognition if registered
+            self.onAudioBuffer?(buffer)
         }
         
         try engine.start()
@@ -161,6 +167,7 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         audioEngine?.stop()
         audioEngine = nil
         audioFile = nil
+        self.onAudioBuffer = nil
         
         self.isRecording = false
         self.audioLevel = 0.0

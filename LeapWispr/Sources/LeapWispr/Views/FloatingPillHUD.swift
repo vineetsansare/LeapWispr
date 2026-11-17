@@ -32,9 +32,6 @@ public final class FloatingPillHUD {
     private var window: NonKeyFloatingPanel?
     private var dismissTimer: Timer?
     
-    private var currentStatus: HUDStatus = .idle
-    private var currentTone: ToneType = .professional
-    
     public var onToneCycleRequested: (() -> Void)?
     public var onCancelRequested: (() -> Void)?
     public var onStopRequested: (() -> Void)?
@@ -44,18 +41,33 @@ public final class FloatingPillHUD {
     }
     
     private func setupPanel() {
-        let panel = NonKeyFloatingPanel(contentRect: NSRect(x: 0, y: 0, width: 340, height: 50))
+        let initialWidth: CGFloat = 340
+        let panel = NonKeyFloatingPanel(contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: 52))
         self.window = panel
-        updateContent()
+        
+        // Wire state callbacks
+        FloatingPillState.shared.onToneCycleRequested = { [weak self] in
+            self?.onToneCycleRequested?()
+        }
+        FloatingPillState.shared.onCancelRequested = { [weak self] in
+            self?.onCancelRequested?()
+        }
+        FloatingPillState.shared.onStopRequested = { [weak self] in
+            self?.onStopRequested?()
+        }
+        
+        let hostingView = NSHostingView(rootView: FloatingPillView())
+        hostingView.frame = panel.contentRect(forFrameRect: panel.frame)
+        panel.contentView = hostingView
     }
     
     public func show(status: HUDStatus, tone: ToneType) {
         dismissTimer?.invalidate()
-        self.currentStatus = status
-        self.currentTone = tone
+        FloatingPillState.shared.status = status
+        FloatingPillState.shared.currentTone = tone
+        FloatingPillState.shared.liveTranscript = ""
         
-        updateContent()
-        positionHUD()
+        positionHUD(width: 340)
         
         guard let panel = window else { return }
         if !panel.isVisible {
@@ -69,9 +81,18 @@ public final class FloatingPillHUD {
     }
     
     public func update(status: HUDStatus, tone: ToneType) {
-        self.currentStatus = status
-        self.currentTone = tone
-        updateContent()
+        FloatingPillState.shared.status = status
+        FloatingPillState.shared.currentTone = tone
+        if case .processing = status {
+            adjustHUDWidth(targetWidth: 360)
+        }
+    }
+    
+    /// Streams live transcript directly to the floating pill and smoothly adapts width
+    public func updateLiveTranscript(_ text: String) {
+        FloatingPillState.shared.liveTranscript = text
+        let desiredWidth: CGFloat = text.isEmpty ? 340 : 480
+        adjustHUDWidth(targetWidth: desiredWidth)
     }
     
     public func hide() {
@@ -83,6 +104,9 @@ public final class FloatingPillHUD {
             panel.animator().alphaValue = 0.0
         }, completionHandler: {
             panel.orderOut(nil)
+            DispatchQueue.main.async {
+                FloatingPillState.shared.reset()
+            }
         })
     }
     
@@ -94,41 +118,34 @@ public final class FloatingPillHUD {
         guard let panel = window else { return }
         panel.alphaValue = 0.0
         panel.orderOut(nil)
+        FloatingPillState.shared.reset()
+        positionHUD(width: 340)
     }
     
-    private func updateContent() {
-        guard let panel = window else { return }
-        let view = FloatingPillView(
-            status: currentStatus,
-            currentTone: currentTone,
-            onToneTap: { [weak self] in
-                self?.onToneCycleRequested?()
-            },
-            onCancelTap: { [weak self] in
-                self?.onCancelRequested?()
-            },
-            onStopTap: { [weak self] in
-                self?.onStopRequested?()
-            }
-        )
-        
-        let hostingView = NSHostingView(rootView: view)
-        hostingView.frame = panel.contentRect(forFrameRect: panel.frame)
-        panel.contentView = hostingView
-    }
-    
-    private func positionHUD() {
-        guard let panel = window else { return }
-        guard let screen = NSScreen.main else { return }
+    private func adjustHUDWidth(targetWidth: CGFloat) {
+        guard let panel = window, let screen = NSScreen.main else { return }
+        guard abs(panel.frame.width - targetWidth) > 5 else { return }
         
         let screenRect = screen.visibleFrame
-        let pillWidth: CGFloat = 340
         let pillHeight: CGFloat = 52
-        
-        // Center bottom position, 80pt above dock/bottom
-        let x = screenRect.origin.x + (screenRect.width - pillWidth) / 2
+        let x = screenRect.origin.x + (screenRect.width - targetWidth) / 2
         let y = screenRect.origin.y + 80
         
-        panel.setFrame(NSRect(x: x, y: y, width: pillWidth, height: pillHeight), display: true)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(NSRect(x: x, y: y, width: targetWidth, height: pillHeight), display: true)
+        }
+    }
+    
+    private func positionHUD(width: CGFloat = 340) {
+        guard let panel = window, let screen = NSScreen.main else { return }
+        
+        let screenRect = screen.visibleFrame
+        let pillHeight: CGFloat = 52
+        let x = screenRect.origin.x + (screenRect.width - width) / 2
+        let y = screenRect.origin.y + 80
+        
+        panel.setFrame(NSRect(x: x, y: y, width: width, height: pillHeight), display: true)
     }
 }
