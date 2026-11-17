@@ -1,0 +1,255 @@
+import Foundation
+import Network
+import AppKit
+
+public final class RemoteServer: @unchecked Sendable {
+    public static let shared = RemoteServer()
+    
+    private var listener: NWListener?
+    private let port: UInt16 = 4545
+    
+    private init() {}
+    
+    public func start() {
+        guard listener == nil else { return }
+        
+        do {
+            let parameters = NWParameters.tcp
+            let nwPort = NWEndpoint.Port(rawValue: port)!
+            let newListener = try NWListener(using: parameters, on: nwPort)
+            
+            newListener.newConnectionHandler = { [weak self] connection in
+                self?.handleConnection(connection)
+            }
+            
+            newListener.stateUpdateHandler = { state in
+                switch state {
+                case .ready:
+                    print("[LeapWispr Remote] Server listening on port 4545")
+                case .failed(let error):
+                    print("[LeapWispr Remote] Server failed: \(error)")
+                default:
+                    break
+                }
+            }
+            
+            newListener.start(queue: .global())
+            self.listener = newListener
+        } catch {
+            print("[LeapWispr Remote] Failed to start NWListener: \(error)")
+        }
+    }
+    
+    public func stop() {
+        listener?.cancel()
+        listener = nil
+    }
+    
+    private func handleConnection(_ connection: NWConnection) {
+        connection.start(queue: .global())
+        
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [weak self] data, context, isComplete, error in
+            guard let self = self, let data = data, error == nil else {
+                connection.cancel()
+                return
+            }
+            
+            let requestString = String(decoding: data, as: UTF8.self)
+            self.processRequest(requestString: requestString, connection: connection)
+        }
+    }
+    
+    private func processRequest(requestString: String, connection: NWConnection) {
+        let firstLine = requestString.components(separatedBy: "\r\n").first ?? ""
+        let parts = firstLine.components(separatedBy: " ")
+        guard parts.count >= 2 else {
+            connection.cancel()
+            return
+        }
+        
+        let path = parts[1]
+        
+        if path == "/" {
+            let html = self.generateiPhoneHTML()
+            self.sendResponse(connection: connection, contentType: "text/html", body: html)
+        } else if path.starts(with: "/api/toggle") {
+            Task { @MainActor in
+                DictationCoordinator.shared.toggleDictation()
+                let isRec = AudioEngineManager.shared.isRecording
+                let json = "{\"status\":\"ok\",\"recording\":\(isRec)}"
+                self.sendResponse(connection: connection, contentType: "application/json", body: json)
+            }
+        } else if path.starts(with: "/api/tone") {
+            Task { @MainActor in
+                if let urlComponents = URLComponents(string: path),
+                   let queryItem = urlComponents.queryItems?.first(where: { $0.name == "type" }),
+                   let toneVal = queryItem.value,
+                   let tone = ToneType(rawValue: toneVal) {
+                    AppSettings.shared.selectedTone = tone
+                }
+                let currentTone = AppSettings.shared.selectedTone.rawValue
+                let json = "{\"status\":\"ok\",\"tone\":\"\(currentTone)\"}"
+                self.sendResponse(connection: connection, contentType: "application/json", body: json)
+            }
+        } else if path == "/api/status" {
+            Task { @MainActor in
+                let isRecording = AudioEngineManager.shared.isRecording
+                let tone = AppSettings.shared.selectedTone.rawValue
+                let words = AppSettings.shared.totalWordsSpoken
+                let json = "{\"recording\":\(isRecording),\"tone\":\"\(tone)\",\"words\":\(words)}"
+                self.sendResponse(connection: connection, contentType: "application/json", body: json)
+            }
+        } else {
+            self.sendResponse(connection: connection, statusCode: 404, contentType: "text/plain", body: "Not found")
+        }
+    }
+    
+    private func sendResponse(connection: NWConnection, statusCode: Int = 200, contentType: String, body: String) {
+        let data = body.data(using: .utf8) ?? Data()
+        let headers = """
+        HTTP/1.1 \(statusCode) OK\r
+        Content-Type: \(contentType); charset=utf-8\r
+        Content-Length: \(data.count)\r
+        Access-Control-Allow-Origin: *\r
+        Connection: close\r
+        \r
+        
+        """
+        var responseData = headers.data(using: .utf8) ?? Data()
+        responseData.append(data)
+        
+        connection.send(content: responseData, completion: .contentProcessed { _ in
+            connection.cancel()
+        })
+    }
+    
+    private func generateiPhoneHTML() -> String {
+        return """
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+            <title>LeapWispr Remote</title>
+            <meta name="apple-mobile-web-app-capable" content="yes">
+            <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+            <style>
+                * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+                body {
+                    margin: 0; padding: env(safe-area-inset-top, 24px) 16px env(safe-area-inset-bottom, 24px);
+                    background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+                    display: flex; flex-direction: column; height: 100vh; justify-content: space-between; text-align: center;
+                }
+                .header { margin-top: 10px; }
+                .logo { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+                .status-badge {
+                    display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px;
+                    border-radius: 20px; background: rgba(255,255,255,0.1); font-size: 13px; margin-top: 10px;
+                }
+                .dot { width: 8px; height: 8px; border-radius: 50%; background: #34C759; }
+                .dot.live { background: #FF3B30; animation: pulse 1s infinite; }
+                @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }
+                
+                .tones { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 24px 0; }
+                .tone-btn {
+                    padding: 9px 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.15);
+                    background: rgba(255,255,255,0.06); color: #fff; font-size: 13px; font-weight: 500; cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .tone-btn.active { background: #007AFF; border-color: #007AFF; font-weight: 600; }
+                
+                .mic-container { margin: auto 0; }
+                .mic-button {
+                    width: 140px; height: 140px; border-radius: 50%; border: none;
+                    background: linear-gradient(135deg, #007AFF, #5856D6); color: #fff;
+                    font-size: 54px; display: flex; align-items: center; justify-content: center;
+                    margin: 0 auto; box-shadow: 0 10px 35px rgba(0,122,255,0.4); cursor: pointer;
+                    transition: transform 0.15s, background 0.3s;
+                }
+                .mic-button.recording {
+                    background: linear-gradient(135deg, #FF3B30, #FF9500);
+                    box-shadow: 0 10px 45px rgba(255,59,48,0.6);
+                    transform: scale(1.08);
+                }
+                .mic-label { margin-top: 20px; font-size: 16px; font-weight: 600; color: rgba(255,255,255,0.8); }
+                .footer { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 10px; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <div class="logo">🎙️ LeapWispr Remote</div>
+                <div class="status-badge">
+                    <div class="dot" id="statusDot"></div>
+                    <span id="statusText">Connected to Mac</span>
+                </div>
+                
+                <div class="tones">
+                    <button class="tone-btn" onclick="setTone('professional', this)">💼 Professional</button>
+                    <button class="tone-btn active" onclick="setTone('casual', this)">💬 Casual</button>
+                    <button class="tone-btn" onclick="setTone('excited', this)">🚀 Excited</button>
+                    <button class="tone-btn" onclick="setTone('dev_prompt', this)">💻 Dev Prompt</button>
+                    <button class="tone-btn" onclick="setTone('bullet_points', this)">📝 Bullets</button>
+                </div>
+            </div>
+
+            <div class="mic-container">
+                <button class="mic-button" id="micBtn" onclick="toggleMic()">🎙️</button>
+                <div class="mic-label" id="micLabel">Tap to Speak into Mac</div>
+            </div>
+
+            <div class="footer">
+                iPhone 14 Pro Max • Wireless Remote Controller • Clamshell Ready
+            </div>
+
+            <script>
+                let isRecording = false;
+                
+                function toggleMic() {
+                    if (navigator.vibrate) navigator.vibrate(60);
+                    fetch('/api/toggle')
+                        .then(r => r.json())
+                        .then(data => updateState(data.recording));
+                }
+
+                function setTone(tone, btn) {
+                    if (navigator.vibrate) navigator.vibrate(35);
+                    document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    fetch('/api/tone?type=' + tone);
+                }
+
+                function updateState(recording) {
+                    isRecording = recording;
+                    const btn = document.getElementById('micBtn');
+                    const label = document.getElementById('micLabel');
+                    const dot = document.getElementById('statusDot');
+                    const statusText = document.getElementById('statusText');
+                    
+                    if (isRecording) {
+                        btn.classList.add('recording');
+                        btn.innerHTML = '⏹️';
+                        label.innerText = 'Listening... Tap to Stop & Inject';
+                        dot.classList.add('live');
+                        statusText.innerText = 'Dictating to Mac';
+                    } else {
+                        btn.classList.remove('recording');
+                        btn.innerHTML = '🎙️';
+                        label.innerText = 'Tap to Speak into Mac';
+                        dot.classList.remove('live');
+                        statusText.innerText = 'Connected to Mac';
+                    }
+                }
+
+                setInterval(() => {
+                    fetch('/api/status')
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.recording !== isRecording) updateState(data.recording);
+                        }).catch(() => {});
+                }, 800);
+            </script>
+        </body>
+        </html>
+        """
+    }
+}
