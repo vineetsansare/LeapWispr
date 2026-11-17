@@ -34,6 +34,20 @@ public enum HotkeyMode: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+public enum AudioInputMode: String, CaseIterable, Identifiable, Codable {
+    case preferContinuity = "prefer_continuity"
+    case systemDefault = "system_default"
+    
+    public var id: String { rawValue }
+    
+    public var displayName: String {
+        switch self {
+        case .preferContinuity: return "📱 iPhone Continuity Mic (Auto-detect)"
+        case .systemDefault: return "💻 MacBook / System Default"
+        }
+    }
+}
+
 @MainActor
 public final class AppSettings: ObservableObject {
     public static let shared = AppSettings()
@@ -66,6 +80,10 @@ public final class AppSettings: ObservableObject {
     
     @Published public var sttEngine: STTEngineType {
         didSet { defaults.set(sttEngine.rawValue, forKey: "stt_engine") }
+    }
+    
+    @Published public var audioInputMode: AudioInputMode {
+        didSet { defaults.set(audioInputMode.rawValue, forKey: "audio_input_mode") }
     }
     
     @Published public var hotkeyMode: HotkeyMode {
@@ -101,6 +119,9 @@ public final class AppSettings: ObservableObject {
         
         let savedEngine = defaults.string(forKey: "stt_engine") ?? STTEngineType.appleSpeech.rawValue
         self.sttEngine = STTEngineType(rawValue: savedEngine) ?? .appleSpeech
+        
+        let savedInputMode = defaults.string(forKey: "audio_input_mode") ?? AudioInputMode.preferContinuity.rawValue
+        self.audioInputMode = AudioInputMode(rawValue: savedInputMode) ?? .preferContinuity
         
         let savedHotkey = defaults.string(forKey: "hotkey_mode") ?? HotkeyMode.doubleTapFn.rawValue
         self.hotkeyMode = HotkeyMode(rawValue: savedHotkey) ?? .doubleTapFn

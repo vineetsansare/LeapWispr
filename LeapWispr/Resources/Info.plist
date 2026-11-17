@@ -22,6 +22,8 @@
     <true/>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSCameraUseContinuityCameraDeviceType</key>
+    <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>LeapWispr requires microphone access to transcribe and transform your speech into text.</string>
     <key>NSSpeechRecognitionUsageDescription</key>

@@ -59,15 +59,49 @@ public struct MenuBarPopoverView: View {
                 .font(.system(size: 20))
                 .foregroundStyle(Color.accentColor)
             
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("LeapWispr")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
                 Text("Native Voice AI • \(settings.hotkeyMode.displayName)")
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-                Text("🎙️ \(audioManager.activeInputDeviceName)")
-                    .font(.system(size: 9.5))
+                
+                // Audio device switcher
+                Menu {
+                    Button(action: {
+                        settings.audioInputMode = .preferContinuity
+                        audioManager.updateActiveDeviceName()
+                    }) {
+                        HStack {
+                            Text("📱 iPhone Continuity Mic (Auto-detect)")
+                            if settings.audioInputMode == .preferContinuity {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                    Button(action: {
+                        settings.audioInputMode = .systemDefault
+                        audioManager.updateActiveDeviceName()
+                    }) {
+                        HStack {
+                            Text("💻 MacBook / System Default")
+                            if settings.audioInputMode == .systemDefault {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(settings.audioInputMode == .preferContinuity ? "📱" : "💻")
+                        Text(audioManager.activeInputDeviceName)
+                            .lineLimit(1)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 7))
+                    }
+                    .font(.system(size: 9.5, weight: .medium))
                     .foregroundStyle(.blue)
+                }
+                .menuStyle(.borderlessButton)
             }
             
             Spacer()

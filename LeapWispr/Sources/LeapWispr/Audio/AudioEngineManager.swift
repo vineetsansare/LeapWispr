@@ -30,8 +30,57 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         updateActiveDeviceName()
     }
     
-    /// Retrieves the current system default input device name (e.g. MacBook Pro Microphone)
+    /// Finds any connected Continuity Microphone (e.g. iPhone 14 Pro Max)
+    public func findContinuityDevice() -> (id: AudioDeviceID, name: String)? {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &dataSize) == noErr else { return nil }
+        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        var devices = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &dataSize, &devices) == noErr else { return nil }
+        
+        for id in devices {
+            var streamAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreams,
+                mScope: kAudioDevicePropertyScopeInput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var streamSize: UInt32 = 0
+            AudioObjectGetPropertyDataSize(id, &streamAddr, 0, nil, &streamSize)
+            guard streamSize > 0 else { continue }
+            
+            var nameAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceNameCFString,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var nameUnmanaged: Unmanaged<CFString>?
+            var nameSz = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            if AudioObjectGetPropertyData(id, &nameAddr, 0, nil, &nameSz, &nameUnmanaged) == noErr,
+               let cf = nameUnmanaged?.takeRetainedValue() {
+                let name = cf as String
+                if name.localizedCaseInsensitiveContains("iPhone") ||
+                   name.localizedCaseInsensitiveContains("14 Pro") ||
+                   name.localizedCaseInsensitiveContains("Continuity") {
+                    return (id, name)
+                }
+            }
+        }
+        return nil
+    }
+    
+    /// Retrieves the current active input device name
     public func updateActiveDeviceName() {
+        if AppSettings.shared.audioInputMode == .preferContinuity,
+           let continuity = findContinuityDevice() {
+            self.activeInputDeviceName = continuity.name
+            return
+        }
+        
         var defaultDeviceAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDefaultInputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -59,9 +108,6 @@ public final class AudioEngineManager: NSObject, ObservableObject {
     public func startRecording() throws {
         guard !isRecording else { return }
         
-        updateActiveDeviceName()
-        print("[LeapWispr Audio] Recording started using device: \(activeInputDeviceName)")
-        
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent("leapwispr_\(UUID().uuidString).wav")
         self.currentRecordingURL = fileURL
@@ -69,6 +115,33 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
+        
+        // 1. Device Selection & Binding (Auto-bind Continuity iPhone if preferred)
+        if AppSettings.shared.audioInputMode == .preferContinuity,
+           let continuity = findContinuityDevice(),
+           let unit = inputNode.audioUnit {
+            var devID = continuity.id
+            let status = AudioUnitSetProperty(
+                unit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &devID,
+                UInt32(MemoryLayout<AudioDeviceID>.size)
+            )
+            if status == noErr {
+                self.activeInputDeviceName = continuity.name
+                print("[LeapWispr Audio] Successfully activated & bound Continuity Mic: \(continuity.name) (ID: \(devID))")
+            } else {
+                updateActiveDeviceName()
+                print("[LeapWispr Audio] AudioUnitSetProperty failed (\(status)), fell back to: \(activeInputDeviceName)")
+            }
+        } else {
+            updateActiveDeviceName()
+            print("[LeapWispr Audio] Using system default mic: \(activeInputDeviceName)")
+        }
+        
+        // 2. Query output format AFTER device is bound to get the exact hardware sample rate & channel layout!
         let inputFormat = inputNode.outputFormat(forBus: 0)
         
         guard inputFormat.sampleRate > 0 else {

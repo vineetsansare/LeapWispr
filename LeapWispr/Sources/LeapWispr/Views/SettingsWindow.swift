@@ -61,6 +61,19 @@ public struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             
+            Section("Audio Input Device") {
+                Picker("Microphone Source", selection: $settings.audioInputMode) {
+                    ForEach(AudioInputMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.radioGroup)
+                
+                Text("When set to 'iPhone Continuity Mic', LeapWispr automatically connects and activates your nearby iPhone's microphone (essential for Clamshell mode or when your laptop is docked).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
             Section("Behavior") {
                 Toggle("Auto-adapt tone to active application", isOn: $settings.autoContextTone)
                 Toggle("Audio feedback chime on start/stop", isOn: $settings.soundFeedback)
