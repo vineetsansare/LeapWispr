@@ -82,11 +82,34 @@ public final class FloatingPillHUD {
                 panel.animator().alphaValue = 1.0
             }
         }
+        
+        switch status {
+        case .error, .success:
+            dismissTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.hide()
+                }
+            }
+        default:
+            break
+        }
     }
     
     public func update(status: HUDStatus, tone: ToneType) {
+        dismissTimer?.invalidate()
         FloatingPillState.shared.status = status
         FloatingPillState.shared.currentTone = tone
+        
+        switch status {
+        case .error, .success:
+            dismissTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: false) { [weak self] _ in
+                DispatchQueue.main.async {
+                    self?.hide()
+                }
+            }
+        default:
+            break
+        }
     }
     
     /// Streams live transcript to the overlay above the pill and expands window height upwards

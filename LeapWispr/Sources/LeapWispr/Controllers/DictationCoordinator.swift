@@ -108,11 +108,14 @@ public final class DictationCoordinator: ObservableObject {
                 // 1. Get Speech Transcript (instant from live buffer, or fallback to file transcription)
                 var rawTranscript = liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
                 if rawTranscript.isEmpty {
+                    print("[LeapWispr] Live transcript empty, running STT file fallback...")
                     let sttProvider = getSTTProvider()
                     rawTranscript = try await sttProvider.transcribe(audioURL: audioURL)
+                    print("[LeapWispr] File fallback transcript: '\(rawTranscript)'")
                 }
                 
                 guard !rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    print("[LeapWispr] Warning: No speech detected in audio capture.")
                     await MainActor.run {
                         self.pillHUD.update(status: .error("No speech detected"), tone: self.activeTone)
                     }

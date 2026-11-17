@@ -27,63 +27,40 @@ public final class AudioEngineManager: NSObject, ObservableObject {
     
     private override init() {
         super.init()
+        updateActiveDeviceName()
     }
     
-    /// Finds any connected Continuity Microphone (e.g. iPhone 14 Pro Max) or external microphone
-    private func findPreferredAudioDevice() -> (id: AudioDeviceID, name: String)? {
-        var propertyAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
+    /// Retrieves the current system default input device name (e.g. MacBook Pro Microphone)
+    public func updateActiveDeviceName() {
+        var defaultDeviceAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
             mScope: kAudioObjectPropertyScopeGlobal,
             mElement: kAudioObjectPropertyElementMain
         )
-        var dataSize: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &dataSize) == noErr else {
-            return nil
-        }
-        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
-        var devices = [AudioDeviceID](repeating: 0, count: count)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &propertyAddress, 0, nil, &dataSize, &devices) == noErr else {
-            return nil
-        }
-        
-        var continuityDevice: (AudioDeviceID, String)? = nil
-        
-        for id in devices {
+        var defaultDeviceId: AudioDeviceID = 0
+        var sz = UInt32(MemoryLayout<AudioDeviceID>.size)
+        if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultDeviceAddress, 0, nil, &sz, &defaultDeviceId) == noErr {
             var nameAddr = AudioObjectPropertyAddress(
                 mSelector: kAudioDevicePropertyDeviceNameCFString,
                 mScope: kAudioObjectPropertyScopeGlobal,
                 mElement: kAudioObjectPropertyElementMain
             )
             var nameUnmanaged: Unmanaged<CFString>?
-            var sz = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-            if AudioObjectGetPropertyData(id, &nameAddr, 0, nil, &sz, &nameUnmanaged) == noErr,
+            var nameSz = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            if AudioObjectGetPropertyData(defaultDeviceId, &nameAddr, 0, nil, &nameSz, &nameUnmanaged) == noErr,
                let cf = nameUnmanaged?.takeRetainedValue() {
-                let name = cf as String
-                
-                // Check if device has audio input streams
-                var streamAddr = AudioObjectPropertyAddress(
-                    mSelector: kAudioDevicePropertyStreams,
-                    mScope: kAudioDevicePropertyScopeInput,
-                    mElement: kAudioObjectPropertyElementMain
-                )
-                var streamSize: UInt32 = 0
-                AudioObjectGetPropertyDataSize(id, &streamAddr, 0, nil, &streamSize)
-                if streamSize > 0 {
-                    if name.localizedCaseInsensitiveContains("iPhone") ||
-                       name.localizedCaseInsensitiveContains("14 Pro") ||
-                       name.localizedCaseInsensitiveContains("Continuity") {
-                        continuityDevice = (id, name)
-                        break
-                    }
-                }
+                self.activeInputDeviceName = cf as String
+                return
             }
         }
-        
-        return continuityDevice
+        self.activeInputDeviceName = "Default Microphone"
     }
     
     public func startRecording() throws {
         guard !isRecording else { return }
+        
+        updateActiveDeviceName()
+        print("[LeapWispr Audio] Recording started using device: \(activeInputDeviceName)")
         
         let tempDir = FileManager.default.temporaryDirectory
         let fileURL = tempDir.appendingPathComponent("leapwispr_\(UUID().uuidString).wav")
@@ -92,24 +69,6 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
-        
-        // Auto-bind Continuity Microphone (iPhone) if present (especially essential in Clamshell mode)
-        if let preferred = findPreferredAudioDevice(), let unit = inputNode.audioUnit {
-            var devID = preferred.id
-            let status = AudioUnitSetProperty(
-                unit,
-                kAudioOutputUnitProperty_CurrentDevice,
-                kAudioUnitScope_Global,
-                0,
-                &devID,
-                UInt32(MemoryLayout<AudioDeviceID>.size)
-            )
-            if status == noErr {
-                self.activeInputDeviceName = preferred.name
-                print("[LeapWispr Audio] Bound input to: \(preferred.name) (ID: \(preferred.id))")
-            }
-        }
-        
         let inputFormat = inputNode.outputFormat(forBus: 0)
         
         guard inputFormat.sampleRate > 0 else {

@@ -206,16 +206,14 @@ public struct ControlPillBar: View {
             .buttonStyle(.plain)
             .help("Click to change tone")
             
-            // Cancel Button
-            if pillState.status == .listening {
-                Button(action: { pillState.onCancelRequested?() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .help("Cancel dictation")
+            // Close / Dismiss Pill Button (Always visible)
+            Button(action: { pillState.onCancelRequested?() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color.secondary)
             }
+            .buttonStyle(.plain)
+            .help(pillState.status == .listening ? "Cancel dictation and close pill" : "Close pill and dismiss")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)

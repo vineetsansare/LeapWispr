@@ -30,27 +30,37 @@ public final class AppleSpeechSTTProvider: @unchecked Sendable, STTProvider {
     
     private func getRecognizer(for locale: Locale? = nil) -> SFSpeechRecognizer? {
         recognizerLock.lock()
+        defer { recognizerLock.unlock() }
+        
         let targetLocale = locale ?? activeLocale
         let id = targetLocale.identifier
         
-        if let existing = recognizers[id] {
-            recognizerLock.unlock()
+        if let existing = recognizers[id], existing.isAvailable {
             return existing
         }
         
-        if let newRec = SFSpeechRecognizer(locale: targetLocale) {
+        if let newRec = SFSpeechRecognizer(locale: targetLocale), newRec.isAvailable {
             recognizers[id] = newRec
-            recognizerLock.unlock()
             return newRec
         }
         
-        if let fallback = SFSpeechRecognizer(locale: Locale(identifier: "en-US")) {
+        if let sysRec = SFSpeechRecognizer(locale: Locale.current), sysRec.isAvailable {
+            recognizers[Locale.current.identifier] = sysRec
+            return sysRec
+        }
+        
+        if let fallback = SFSpeechRecognizer(locale: Locale(identifier: "en-US")), fallback.isAvailable {
             recognizers["en-US"] = fallback
-            recognizerLock.unlock()
             return fallback
         }
         
-        recognizerLock.unlock()
+        for supported in SFSpeechRecognizer.supportedLocales() {
+            if let anyRec = SFSpeechRecognizer(locale: supported), anyRec.isAvailable {
+                recognizers[supported.identifier] = anyRec
+                return anyRec
+            }
+        }
+        
         return nil
     }
     
@@ -91,6 +101,9 @@ public final class AppleSpeechSTTProvider: @unchecked Sendable, STTProvider {
                 self.latestLiveText = text
                 self.liveLock.unlock()
                 onPartialResult(text)
+            }
+            if let error = error {
+                print("[LeapWispr STT] Live recognition task notice/error: \(error.localizedDescription)")
             }
         }
         
