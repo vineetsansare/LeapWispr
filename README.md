@@ -58,7 +58,7 @@ flowchart TD
     end
 
     subgraph UI["🖥️ User Interface"]
-        HUD["Liquid Floating Pill HUD<br/>(Live Waveform + Tone Selector)"]
+        HUD["Liquid Floating Pill HUD<br/>(Karaoke Word Highlighting + Blinking Caret)"]
         MenuBar["Menu Bar Popover & Settings<br/>(Native AppKit + SwiftUI)"]
         Hotkey["Hotkey Monitor<br/>(Option + Space / Double-tap fn)"]
     end
@@ -71,9 +71,12 @@ flowchart TD
 
 ## ✨ Key Features
 
-- **⚡ Clamshell Mode with iPhone Continuity Mic**: Closed your MacBook lid? LeapWispr automatically detects and binds your nearby iPhone 14 Pro Max Continuity Microphone via CoreAudio for crystal-clear 48 kHz capture.
+- **🌍 Babel Live Translation & Dialects**: Speak naturally in your native language or mixed code-switched dialects (Hindi, Hinglish, Spanish, French, German, Arabic, Japanese, Mandarin, etc.). LeapWispr transcribes with the native acoustic engine and uses Gemini 1.5 Flash to inject fluent, idiomatic English (or any selected target language) directly at your cursor.
+- **✨ Real-Time Floating Preview with Karaoke Highlighting**: As you speak, a translucent frosted-glass preview hovers smoothly above the pill. Incoming words light up one by one in bold cyan before settling into soft white with a blinking caret.
+- **⚡ Clamshell Mode with iPhone Continuity Mic**: Closed your MacBook lid? LeapWispr automatically detects and binds your nearby iPhone Continuity Microphone via CoreAudio for crystal-clear 48 kHz capture.
 - **🔒 Privacy-First On-Device STT**: Powered by Apple's `Speech.framework` running on the Apple Silicon Neural Engine (ANE). Zero audio leaves your computer for transcription.
 - **🎨 Smart Context-Adaptive Tones**:
+  - 🌍 **Translate**: Seamless multilingual cross-language translation into your chosen target language.
   - 💼 **Professional**: Formal syntax, structured paragraphs (ideal for Mail, Outlook, LinkedIn).
   - 💬 **Casual**: Conversational contractions, natural flow (Slack, WhatsApp, iMessage).
   - 💻 **Dev Prompt**: Clean instructions, code snippets, camelCase/snake_case formatting (VS Code, Terminal, Antigravity).

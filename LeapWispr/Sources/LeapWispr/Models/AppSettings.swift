@@ -52,6 +52,14 @@ public final class AppSettings: ObservableObject {
         didSet { defaults.set(selectedTone.rawValue, forKey: "selected_tone") }
     }
     
+    @Published public var spokenLanguage: SpokenLanguage {
+        didSet { defaults.set(spokenLanguage.rawValue, forKey: "spoken_language") }
+    }
+    
+    @Published public var targetLanguage: TargetLanguage {
+        didSet { defaults.set(targetLanguage.rawValue, forKey: "target_language") }
+    }
+    
     @Published public var autoContextTone: Bool {
         didSet { defaults.set(autoContextTone, forKey: "auto_context_tone") }
     }
@@ -82,6 +90,12 @@ public final class AppSettings: ObservableObject {
         
         let savedTone = defaults.string(forKey: "selected_tone") ?? ToneType.professional.rawValue
         self.selectedTone = ToneType(rawValue: savedTone) ?? .professional
+        
+        let savedSpokenLang = defaults.string(forKey: "spoken_language") ?? SpokenLanguage.auto.rawValue
+        self.spokenLanguage = SpokenLanguage(rawValue: savedSpokenLang) ?? .auto
+        
+        let savedTargetLang = defaults.string(forKey: "target_language") ?? TargetLanguage.english.rawValue
+        self.targetLanguage = TargetLanguage(rawValue: savedTargetLang) ?? .english
         
         self.autoContextTone = defaults.object(forKey: "auto_context_tone") as? Bool ?? true
         

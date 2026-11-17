@@ -27,6 +27,12 @@ public struct SettingsView: View {
                     Label("AI Models", systemImage: "sparkles")
                 }
             
+            // Babel Languages Tab
+            languagesTab
+                .tabItem {
+                    Label("Languages", systemImage: "globe")
+                }
+            
             // Permissions Tab
             permissionsTab
                 .tabItem {
@@ -187,6 +193,40 @@ public struct SettingsView: View {
                             .help("Clear API Key")
                         }
                     }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+        .formStyle(.grouped)
+    }
+    
+    private var languagesTab: some View {
+        Form {
+            Section("Spoken Language (Input)") {
+                Picker("Speech Input Language", selection: $settings.spokenLanguage) {
+                    ForEach(SpokenLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
+                }
+                
+                Text("Select the language you speak. For bilingual speakers or Hindi/English code-switching, choose 'English (India / Hinglish)' or 'Hindi'. Apple Speech and Groq Whisper adapt acoustic models to this locale.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            
+            Section("Babel Live Translation (Output)") {
+                Picker("Translate Spoken Words Into", selection: $settings.targetLanguage) {
+                    ForEach(TargetLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
+                }
+                
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("💡 How Babel Live Translation Works:")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("1. Set your tone to '🌍 Translate' in the floating HUD or menu bar.\n2. Speak naturally in your native language or mixed dialect (e.g. Hindi, Hinglish, Spanish, French, Arabic).\n3. LeapWispr transcribes with the native acoustic engine and uses Gemini 1.5 Flash to inject fluent, idiomatic text directly at your cursor.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 4)
             }

@@ -109,6 +109,7 @@ public struct LiveTranscriptBubble: View {
 // MARK: - Control Pill Bar
 
 public struct ControlPillBar: View {
+    @ObservedObject var settings = AppSettings.shared
     @ObservedObject var audioManager = AudioEngineManager.shared
     @ObservedObject var pillState = FloatingPillState.shared
     
@@ -185,8 +186,13 @@ public struct ControlPillBar: View {
                 HStack(spacing: 4) {
                     Text(pillState.currentTone.emoji)
                         .font(.system(size: 11))
-                    Text(pillState.currentTone.displayName)
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    if pillState.currentTone == .translate {
+                        Text("Translate → \(settings.targetLanguage.rawValue)")
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    } else {
+                        Text(pillState.currentTone.displayName)
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    }
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 7, weight: .bold))
                         .foregroundStyle(.secondary)

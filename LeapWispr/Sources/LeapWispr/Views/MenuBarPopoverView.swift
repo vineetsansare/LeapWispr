@@ -24,6 +24,11 @@ public struct MenuBarPopoverView: View {
                     // Tone Selector Grid
                     toneSection
                     
+                    // Babel Translation Language Selector
+                    if settings.selectedTone == .translate {
+                        translationLanguageSection
+                    }
+                    
                     // Context Auto-Tone Pill
                     autoContextToggle
                     
@@ -142,6 +147,87 @@ public struct MenuBarPopoverView: View {
                 }
             }
         }
+    }
+    
+    private var translationLanguageSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("BABEL TRANSLATION")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("🌍 Active")
+                    .font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.blue)
+            }
+            
+            HStack(spacing: 8) {
+                // Spoken Language Picker
+                Menu {
+                    ForEach(SpokenLanguage.allCases) { lang in
+                        Button(action: { settings.spokenLanguage = lang }) {
+                            HStack {
+                                Text(lang.displayName)
+                                if settings.spokenLanguage == lang {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(settings.spokenLanguage.shortName)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+                }
+                .menuStyle(.borderlessButton)
+                
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                
+                // Target Language Picker
+                Menu {
+                    ForEach(TargetLanguage.allCases) { lang in
+                        Button(action: { settings.targetLanguage = lang }) {
+                            HStack {
+                                Text(lang.displayName)
+                                if settings.targetLanguage == lang {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(settings.targetLanguage.rawValue)
+                            .font(.system(size: 11, weight: .medium))
+                            .lineLimit(1)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+                }
+                .menuStyle(.borderlessButton)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.accentColor.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 1)
+                )
+        )
     }
     
     private var autoContextToggle: some View {

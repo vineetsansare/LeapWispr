@@ -9,7 +9,9 @@ public final class ToneTransformService: Sendable {
         rawTranscript: String,
         tone: ToneType,
         appContext: ActiveAppContext,
-        apiKey: String
+        apiKey: String,
+        spokenLanguage: SpokenLanguage = .auto,
+        targetLanguage: TargetLanguage = .english
     ) async throws -> String {
         let cleanInput = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanInput.isEmpty else { return "" }
@@ -22,7 +24,14 @@ public final class ToneTransformService: Sendable {
         // If an API key is provided, call Gemini Flash API
         if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             do {
-                return try await callGeminiFlash(rawText: cleanInput, tone: tone, appContext: appContext, apiKey: apiKey)
+                return try await callGeminiFlash(
+                    rawText: cleanInput,
+                    tone: tone,
+                    appContext: appContext,
+                    apiKey: apiKey,
+                    spokenLanguage: spokenLanguage,
+                    targetLanguage: targetLanguage
+                )
             } catch {
                 print("[LeapWispr] Gemini API call error: \(error). Falling back to offline transformer.")
             }
@@ -36,7 +45,9 @@ public final class ToneTransformService: Sendable {
         rawText: String,
         tone: ToneType,
         appContext: ActiveAppContext,
-        apiKey: String
+        apiKey: String,
+        spokenLanguage: SpokenLanguage = .auto,
+        targetLanguage: TargetLanguage = .english
     ) async throws -> String {
         let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\(apiKey)"
         guard let url = URL(string: urlString) else {
@@ -48,9 +59,29 @@ public final class ToneTransformService: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 10.0
         
+        var systemInstruction = tone.systemPrompt
+        if tone == .translate {
+            let target = targetLanguage.displayName
+            let spoken = spokenLanguage.displayName
+            systemInstruction = """
+            You are an expert multilingual translator and writing assistant.
+            The user is speaking in: \(spoken) (or conversational/code-switched speech like Hinglish).
+            Translate the spoken words directly and fluently into: \(target).
+            
+            Key Rules:
+            - If the input is in \(spoken), produce a natural, fluent, and idiomatic translation in \(target).
+            - If the input is already in \(target), refine its flow and clarity.
+            - If the user uses a code-switched mix (e.g. Hinglish or Spanglish), translate the entire message smoothly into \(target).
+            - Strip speech filler words (e.g. 'um', 'uh', 'matlab', 'yaani', 'tu sais').
+            - Preserve intended nuances, technical vocabulary, and emotional tone.
+            - Ensure natural punctuation and sentence structure suitable for \(appContext.appName).
+            - Return ONLY the translated \(target) text with NO quotes, conversational preamble, or explanations.
+            """
+        }
+        
         let promptText = """
         System Instruction:
-        \(tone.systemPrompt)
+        \(systemInstruction)
         
         Target Application Context:
         User is typing in: \(appContext.appName) (\(appContext.bundleId)). Format text specifically for this context.
@@ -112,6 +143,9 @@ public final class ToneTransformService: Sendable {
             return cleaned
             
         case .casual:
+            return cleaned
+            
+        case .translate:
             return cleaned
             
         case .excited:

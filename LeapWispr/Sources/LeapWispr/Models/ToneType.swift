@@ -3,9 +3,10 @@ import Foundation
 public enum ToneType: String, CaseIterable, Identifiable, Codable {
     case professional = "professional"
     case casual = "casual"
-    case excited = "excited"
+    case translate = "translate"
     case devPrompt = "dev_prompt"
     case bulletPoints = "bullet_points"
+    case excited = "excited"
     case raw = "raw"
     
     public var id: String { rawValue }
@@ -14,9 +15,10 @@ public enum ToneType: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .professional: return "Professional"
         case .casual: return "Casual"
-        case .excited: return "Excited"
+        case .translate: return "Translate"
         case .devPrompt: return "Dev / Prompt"
         case .bulletPoints: return "Bullet Points"
+        case .excited: return "Excited"
         case .raw: return "Raw Cleaned"
         }
     }
@@ -25,9 +27,10 @@ public enum ToneType: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .professional: return "briefcase.fill"
         case .casual: return "bubble.left.and.bubble.right.fill"
-        case .excited: return "sparkles"
+        case .translate: return "globe"
         case .devPrompt: return "chevron.left.forwardslash.chevron.right"
         case .bulletPoints: return "list.bullet"
+        case .excited: return "sparkles"
         case .raw: return "waveform"
         }
     }
@@ -36,9 +39,10 @@ public enum ToneType: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .professional: return "💼"
         case .casual: return "💬"
-        case .excited: return "🚀"
+        case .translate: return "🌍"
         case .devPrompt: return "💻"
         case .bulletPoints: return "📝"
+        case .excited: return "🚀"
         case .raw: return "🎙️"
         }
     }
@@ -51,7 +55,6 @@ public enum ToneType: String, CaseIterable, Identifiable, Codable {
             - Ensure impeccable grammar, polite tone, and clarity.
             - Strip conversational filler words ('um', 'uh', 'you know', 'like').
             - Correct false starts and self-corrections gracefully.
-            - Do not add conversational conversational preamble (e.g. 'Here is your text:').
             - Return ONLY the rewritten text.
             """
         case .casual:
@@ -62,6 +65,17 @@ public enum ToneType: String, CaseIterable, Identifiable, Codable {
             - Add an appropriate emoji if it fits naturally, but do not overdo it.
             - Strip filler words ('um', 'uh').
             - Return ONLY the rewritten text.
+            """
+        case .translate:
+            return """
+            You are an expert multilingual translator and writing assistant.
+            The user is speaking in a non-English language (such as Hindi, Arabic, Spanish, French, German, Japanese, Mandarin, etc.) or a mixed/code-switched language (such as Hinglish).
+            Translate the spoken words into natural, fluent, and idiomatic English.
+            - If the input is already in English, refine its clarity and grammar while keeping it natural.
+            - Eliminate speech fillers ('um', 'uh', 'matlab', 'yaani').
+            - Preserve the original meaning, intent, technical terms, and emotional tone.
+            - Format punctuation and capitalization cleanly.
+            - Return ONLY the final translated English text without quotes, markdown headers, or explanations.
             """
         case .excited:
             return """

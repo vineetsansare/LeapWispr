@@ -3,9 +3,11 @@ import Foundation
 public final class CloudGroqSTTProvider: Sendable, STTProvider {
     public let name = "Groq Whisper (Cloud)"
     private let apiKey: String
+    private let languageCode: String?
     
-    public init(apiKey: String) {
+    public init(apiKey: String, languageCode: String? = nil) {
         self.apiKey = apiKey
+        self.languageCode = languageCode
     }
     
     public func transcribe(audioURL: URL) async throws -> String {
@@ -32,6 +34,13 @@ public final class CloudGroqSTTProvider: Sendable, STTProvider {
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"model\"\r\n\r\n".data(using: .utf8)!)
         body.append("whisper-large-v3\r\n".data(using: .utf8)!)
+        
+        // language parameter (if specific language selected)
+        if let lang = languageCode, !lang.isEmpty {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"language\"\r\n\r\n".data(using: .utf8)!)
+            body.append("\(lang)\r\n".data(using: .utf8)!)
+        }
         
         // file parameter
         body.append("--\(boundary)\r\n".data(using: .utf8)!)

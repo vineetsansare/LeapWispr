@@ -50,7 +50,7 @@ public final class DictationCoordinator: ObservableObject {
         self.currentAppContext = appContext
         
         // 2. Determine tone (auto-adaptive or user selection)
-        if settings.autoContextTone {
+        if settings.autoContextTone && settings.selectedTone != .translate {
             self.activeTone = appContext.suggestedTone
         } else {
             self.activeTone = settings.selectedTone
@@ -60,8 +60,12 @@ public final class DictationCoordinator: ObservableObject {
         do {
             try audioManager.startRecording()
             
+            // Set spoken language locale for speech recognition
+            let spokenLocale = settings.spokenLanguage.locale
+            speechProvider.setLocale(spokenLocale)
+            
             // Start real-time live transcript streaming to the Floating Pill HUD
-            try? speechProvider.startLiveRecognition { [weak self] liveText in
+            try? speechProvider.startLiveRecognition(locale: spokenLocale) { [weak self] liveText in
                 DispatchQueue.main.async {
                     self?.pillHUD.updateLiveTranscript(liveText)
                 }
@@ -122,7 +126,9 @@ public final class DictationCoordinator: ObservableObject {
                     rawTranscript: rawTranscript,
                     tone: self.activeTone,
                     appContext: appContext,
-                    apiKey: self.settings.geminiApiKey
+                    apiKey: self.settings.geminiApiKey,
+                    spokenLanguage: self.settings.spokenLanguage,
+                    targetLanguage: self.settings.targetLanguage
                 )
                 
                 // 3. Inject Text into active cursor field
@@ -192,7 +198,7 @@ public final class DictationCoordinator: ObservableObject {
         switch settings.sttEngine {
         case .cloudGroq:
             if !settings.groqApiKey.isEmpty {
-                return CloudGroqSTTProvider(apiKey: settings.groqApiKey)
+                return CloudGroqSTTProvider(apiKey: settings.groqApiKey, languageCode: settings.spokenLanguage.groqLanguageCode)
             }
             return speechProvider
             

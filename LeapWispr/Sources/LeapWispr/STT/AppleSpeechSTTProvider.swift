@@ -5,7 +5,9 @@ import AVFoundation
 public final class AppleSpeechSTTProvider: @unchecked Sendable, STTProvider {
     public let name = "Apple Speech (On-Device)"
     
-    private let speechRecognizer: SFSpeechRecognizer?
+    private var recognizers: [String: SFSpeechRecognizer] = [:]
+    private let recognizerLock = NSLock()
+    private var activeLocale: Locale = Locale.current
     
     // Live Streaming Recognition State
     private let liveLock = NSLock()
@@ -14,7 +16,42 @@ public final class AppleSpeechSTTProvider: @unchecked Sendable, STTProvider {
     private var latestLiveText: String = ""
     
     public init(locale: Locale = Locale.current) {
-        self.speechRecognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
+        self.activeLocale = locale
+        if let rec = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(locale: Locale(identifier: "en-US")) {
+            self.recognizers[locale.identifier] = rec
+        }
+    }
+    
+    public func setLocale(_ locale: Locale) {
+        recognizerLock.lock()
+        self.activeLocale = locale
+        recognizerLock.unlock()
+    }
+    
+    private func getRecognizer(for locale: Locale? = nil) -> SFSpeechRecognizer? {
+        recognizerLock.lock()
+        let targetLocale = locale ?? activeLocale
+        let id = targetLocale.identifier
+        
+        if let existing = recognizers[id] {
+            recognizerLock.unlock()
+            return existing
+        }
+        
+        if let newRec = SFSpeechRecognizer(locale: targetLocale) {
+            recognizers[id] = newRec
+            recognizerLock.unlock()
+            return newRec
+        }
+        
+        if let fallback = SFSpeechRecognizer(locale: Locale(identifier: "en-US")) {
+            recognizers["en-US"] = fallback
+            recognizerLock.unlock()
+            return fallback
+        }
+        
+        recognizerLock.unlock()
+        return nil
     }
     
     public func requestSpeechAuthorization() async -> Bool {
@@ -27,10 +64,10 @@ public final class AppleSpeechSTTProvider: @unchecked Sendable, STTProvider {
     
     // MARK: - Live Real-Time Buffer Recognition
     
-    public func startLiveRecognition(onPartialResult: @escaping @Sendable (String) -> Void) throws {
+    public func startLiveRecognition(locale: Locale? = nil, onPartialResult: @escaping @Sendable (String) -> Void) throws {
         _ = stopLiveRecognition()
         
-        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+        guard let recognizer = getRecognizer(for: locale), recognizer.isAvailable else {
             throw NSError(
                 domain: "LeapWispr.STT",
                 code: 101,
@@ -84,7 +121,11 @@ public final class AppleSpeechSTTProvider: @unchecked Sendable, STTProvider {
     // MARK: - Audio File Recognition Fallback
     
     public func transcribe(audioURL: URL) async throws -> String {
-        guard let recognizer = speechRecognizer, recognizer.isAvailable else {
+        return try await transcribe(audioURL: audioURL, locale: nil)
+    }
+    
+    public func transcribe(audioURL: URL, locale: Locale? = nil) async throws -> String {
+        guard let recognizer = getRecognizer(for: locale), recognizer.isAvailable else {
             throw NSError(
                 domain: "LeapWispr.STT",
                 code: 101,
