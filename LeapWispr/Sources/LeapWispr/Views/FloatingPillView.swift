@@ -15,52 +15,129 @@ public struct FloatingPillView: View {
     @ObservedObject var pillState = FloatingPillState.shared
     
     public var body: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 8) {
+            Spacer(minLength: 0)
+            
+            // 1. Live Streaming Transcript Overlay Floating Directly Above the Pill
+            if !pillState.liveTranscript.isEmpty && pillState.status == .listening {
+                LiveTranscriptBubble(transcript: pillState.liveTranscript)
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.92, anchor: .bottom).combined(with: .opacity),
+                            removal: .opacity
+                        )
+                    )
+            }
+            
+            // 2. Sleek Compact Control Pill Bar
+            ControlPillBar()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .animation(.spring(response: 0.32, dampingFraction: 0.78), value: pillState.liveTranscript.isEmpty)
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: pillState.status)
+    }
+}
+
+// MARK: - Live Transcript Bubble Floating Above the Pill
+
+public struct LiveTranscriptBubble: View {
+    let transcript: String
+    
+    public var body: some View {
+        HStack(alignment: .bottom, spacing: 4) {
+            Text(attributedTranscript)
+                .multilineTextAlignment(.leading)
+                .lineLimit(4)
+                .fixedSize(horizontal: false, vertical: true)
+            
+            BlinkingCaretView()
+                .padding(.bottom, 2)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .frame(maxWidth: 420, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.24), radius: 14, x: 0, y: 6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.35), Color.white.opacity(0.12)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 0.9
+                        )
+                )
+        )
+    }
+    
+    /// Renders previous words in normalized soft-white, and the latest incoming word in vibrant cyan bold
+    private var attributedTranscript: AttributedString {
+        let clean = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return AttributedString("") }
+        
+        let words = clean.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        guard !words.isEmpty else { return AttributedString("") }
+        
+        if words.count == 1 {
+            var str = AttributedString(words[0])
+            str.foregroundColor = Color.cyan
+            str.font = Font.system(size: 13, weight: .bold, design: .rounded)
+            return str
+        }
+        
+        // Normalized previous words
+        let previousWords = words.dropLast().joined(separator: " ") + " "
+        var prevStr = AttributedString(previousWords)
+        prevStr.foregroundColor = Color.white.opacity(0.82)
+        prevStr.font = Font.system(size: 13, weight: .medium, design: .rounded)
+        
+        // Highlighted latest active word
+        let latestWord = words.last!
+        var lastStr = AttributedString(latestWord)
+        lastStr.foregroundColor = Color.cyan
+        lastStr.font = Font.system(size: 13, weight: .bold, design: .rounded)
+        
+        prevStr.append(lastStr)
+        return prevStr
+    }
+}
+
+// MARK: - Control Pill Bar
+
+public struct ControlPillBar: View {
+    @ObservedObject var audioManager = AudioEngineManager.shared
+    @ObservedObject var pillState = FloatingPillState.shared
+    
+    public var body: some View {
+        HStack(spacing: 12) {
             // Status Icon / Waveform
             statusIconView
             
-            // Middle Content: Waveform + Live Transcript
+            // Middle Content: Waveform & Status
             switch pillState.status {
             case .listening:
-                HStack(spacing: 8) {
-                    WaveformBarsView(level: audioManager.audioLevel)
-                        .frame(width: 36, height: 16)
-                    
-                    // Live Transcript Preview Area
-                    if pillState.liveTranscript.isEmpty {
-                        Text("Listening...")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                            .opacity(0.85)
-                    } else {
-                        HStack(spacing: 3) {
-                            Text(pillState.liveTranscript)
-                                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                                .truncationMode(.head)
-                                .frame(maxWidth: 240, alignment: .leading)
-                            
-                            BlinkingCaretView()
-                        }
+                WaveformBarsView(level: audioManager.audioLevel)
+                    .frame(width: 44, height: 16)
+                
+                // Done Button
+                Button(action: { pillState.onStopRequested?() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 10, weight: .bold))
+                        Text("Done")
+                            .font(.system(size: 11, weight: .bold, design: .rounded))
                     }
-                    
-                    // Done & Insert Button
-                    Button(action: { pillState.onStopRequested?() }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 10, weight: .bold))
-                            Text("Done")
-                                .font(.system(size: 11, weight: .bold, design: .rounded))
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 4)
-                        .background(Capsule().fill(Color.blue))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Stop dictating and insert text")
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.blue))
                 }
+                .buttonStyle(.plain)
+                .help("Stop dictating and insert text")
                 
             case .processing(let message):
                 HStack(spacing: 6) {
@@ -145,8 +222,6 @@ public struct FloatingPillView: View {
                         .strokeBorder(Color.white.opacity(0.28), lineWidth: 0.8)
                 )
         )
-        .animation(.spring(response: 0.35, dampingFraction: 0.75), value: pillState.liveTranscript)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: pillState.status)
     }
     
     @ViewBuilder
@@ -187,7 +262,8 @@ public struct FloatingPillView: View {
     }
 }
 
-// Blinking caret for live transcription
+// MARK: - Animated Caret
+
 public struct BlinkingCaretView: View {
     @State private var isVisible = true
     
@@ -195,17 +271,18 @@ public struct BlinkingCaretView: View {
     
     public var body: some View {
         Rectangle()
-            .fill(Color.blue)
-            .frame(width: 2, height: 13)
+            .fill(Color.cyan)
+            .frame(width: 2, height: 14)
             .opacity(isVisible ? 1.0 : 0.0)
-            .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isVisible)
+            .animation(.easeInOut(duration: 0.45).repeatForever(autoreverses: true), value: isVisible)
             .onAppear {
                 isVisible = false
             }
     }
 }
 
-// Animated 5-bar audio waveform
+// MARK: - Waveform Bars
+
 public struct WaveformBarsView: View {
     let level: Float
     

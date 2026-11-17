@@ -18,7 +18,7 @@ public final class NonKeyFloatingPanel: NSPanel {
         self.isFloatingPanel = true
         self.backgroundColor = .clear
         self.isOpaque = false
-        self.hasShadow = true
+        self.hasShadow = false // Shadow is rendered inside SwiftUI views
         self.isMovableByWindowBackground = true
         self.becomesKeyOnlyIfNeeded = false
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
@@ -36,13 +36,15 @@ public final class FloatingPillHUD {
     public var onCancelRequested: (() -> Void)?
     public var onStopRequested: (() -> Void)?
     
+    private let hudWidth: CGFloat = 440
+    private var currentHeight: CGFloat = 54
+    
     private init() {
         setupPanel()
     }
     
     private func setupPanel() {
-        let initialWidth: CGFloat = 340
-        let panel = NonKeyFloatingPanel(contentRect: NSRect(x: 0, y: 0, width: initialWidth, height: 52))
+        let panel = NonKeyFloatingPanel(contentRect: NSRect(x: 0, y: 0, width: hudWidth, height: 54))
         self.window = panel
         
         // Wire state callbacks
@@ -57,7 +59,8 @@ public final class FloatingPillHUD {
         }
         
         let hostingView = NSHostingView(rootView: FloatingPillView())
-        hostingView.frame = panel.contentRect(forFrameRect: panel.frame)
+        hostingView.autoresizingMask = [.width, .height]
+        hostingView.frame = panel.contentView?.bounds ?? NSRect(x: 0, y: 0, width: hudWidth, height: 54)
         panel.contentView = hostingView
     }
     
@@ -67,7 +70,8 @@ public final class FloatingPillHUD {
         FloatingPillState.shared.currentTone = tone
         FloatingPillState.shared.liveTranscript = ""
         
-        positionHUD(width: 340)
+        currentHeight = 54
+        positionHUD(height: 54)
         
         guard let panel = window else { return }
         if !panel.isVisible {
@@ -83,16 +87,24 @@ public final class FloatingPillHUD {
     public func update(status: HUDStatus, tone: ToneType) {
         FloatingPillState.shared.status = status
         FloatingPillState.shared.currentTone = tone
-        if case .processing = status {
-            adjustHUDWidth(targetWidth: 360)
-        }
     }
     
-    /// Streams live transcript directly to the floating pill and smoothly adapts width
+    /// Streams live transcript to the overlay above the pill and expands window height upwards
     public func updateLiveTranscript(_ text: String) {
         FloatingPillState.shared.liveTranscript = text
-        let desiredWidth: CGFloat = text.isEmpty ? 340 : 480
-        adjustHUDWidth(targetWidth: desiredWidth)
+        
+        let targetHeight: CGFloat
+        if text.isEmpty {
+            targetHeight = 54
+        } else if text.count <= 60 {
+            targetHeight = 106
+        } else if text.count <= 130 {
+            targetHeight = 138
+        } else {
+            targetHeight = 176
+        }
+        
+        adjustHUDHeight(targetHeight: targetHeight)
     }
     
     public func hide() {
@@ -106,46 +118,46 @@ public final class FloatingPillHUD {
             panel.orderOut(nil)
             DispatchQueue.main.async {
                 FloatingPillState.shared.reset()
+                self.currentHeight = 54
+                self.positionHUD(height: 54)
             }
         })
     }
     
     /// Synchronously dismisses the HUD window without any animation delay.
-    /// This immediately releases WindowServer focus back to the target application
-    /// before synthetic keystrokes or text injections are dispatched.
     public func hideImmediately() {
         dismissTimer?.invalidate()
         guard let panel = window else { return }
         panel.alphaValue = 0.0
         panel.orderOut(nil)
         FloatingPillState.shared.reset()
-        positionHUD(width: 340)
+        currentHeight = 54
+        positionHUD(height: 54)
     }
     
-    private func adjustHUDWidth(targetWidth: CGFloat) {
+    private func adjustHUDHeight(targetHeight: CGFloat) {
         guard let panel = window, let screen = NSScreen.main else { return }
-        guard abs(panel.frame.width - targetWidth) > 5 else { return }
+        guard abs(currentHeight - targetHeight) > 3 else { return }
         
+        currentHeight = targetHeight
         let screenRect = screen.visibleFrame
-        let pillHeight: CGFloat = 52
-        let x = screenRect.origin.x + (screenRect.width - targetWidth) / 2
-        let y = screenRect.origin.y + 80
+        let x = screenRect.origin.x + (screenRect.width - hudWidth) / 2
+        let y = screenRect.origin.y + 80 // Base y remains stationary, height grows upwards!
         
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
+            context.duration = 0.20
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(NSRect(x: x, y: y, width: targetWidth, height: pillHeight), display: true)
+            panel.animator().setFrame(NSRect(x: x, y: y, width: hudWidth, height: targetHeight), display: true)
         }
     }
     
-    private func positionHUD(width: CGFloat = 340) {
+    private func positionHUD(height: CGFloat = 54) {
         guard let panel = window, let screen = NSScreen.main else { return }
         
         let screenRect = screen.visibleFrame
-        let pillHeight: CGFloat = 52
-        let x = screenRect.origin.x + (screenRect.width - width) / 2
+        let x = screenRect.origin.x + (screenRect.width - hudWidth) / 2
         let y = screenRect.origin.y + 80
         
-        panel.setFrame(NSRect(x: x, y: y, width: width, height: pillHeight), display: true)
+        panel.setFrame(NSRect(x: x, y: y, width: hudWidth, height: height), display: true)
     }
 }
