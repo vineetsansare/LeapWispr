@@ -35,15 +35,15 @@ public enum HotkeyMode: String, CaseIterable, Identifiable, Codable {
 }
 
 public enum AudioInputMode: String, CaseIterable, Identifiable, Codable {
-    case preferContinuity = "prefer_continuity"
     case systemDefault = "system_default"
+    case preferContinuity = "prefer_continuity"
     
     public var id: String { rawValue }
     
     public var displayName: String {
         switch self {
-        case .preferContinuity: return "📱 iPhone Continuity Mic (Auto-detect)"
-        case .systemDefault: return "💻 MacBook / System Default"
+        case .systemDefault: return "💻 MacBook / System Default (Recommended)"
+        case .preferContinuity: return "📱 iPhone Continuity Mic"
         }
     }
 }
@@ -120,8 +120,8 @@ public final class AppSettings: ObservableObject {
         let savedEngine = defaults.string(forKey: "stt_engine") ?? STTEngineType.appleSpeech.rawValue
         self.sttEngine = STTEngineType(rawValue: savedEngine) ?? .appleSpeech
         
-        let savedInputMode = defaults.string(forKey: "audio_input_mode") ?? AudioInputMode.preferContinuity.rawValue
-        self.audioInputMode = AudioInputMode(rawValue: savedInputMode) ?? .preferContinuity
+        let savedInputMode = defaults.string(forKey: "audio_input_mode") ?? AudioInputMode.systemDefault.rawValue
+        self.audioInputMode = AudioInputMode(rawValue: savedInputMode) ?? .systemDefault
         
         let savedHotkey = defaults.string(forKey: "hotkey_mode") ?? HotkeyMode.doubleTapFn.rawValue
         self.hotkeyMode = HotkeyMode(rawValue: savedHotkey) ?? .doubleTapFn

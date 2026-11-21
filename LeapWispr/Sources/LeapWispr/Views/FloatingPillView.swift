@@ -205,26 +205,13 @@ public struct ControlPillBar: View {
                 .frame(height: 16)
                 .opacity(0.35)
             
-            // Interactive Liquid Glass Tone Dropdown Menu
-            Menu {
-                ForEach(ToneType.allCases) { tone in
-                    Button(action: {
-                        pillState.currentTone = tone
-                        settings.selectedTone = tone
-                        pillState.onToneSelected?(tone)
-                    }) {
-                        HStack {
-                            Text("\(tone.emoji) \(tone.displayName)")
-                            if pillState.currentTone == tone {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            } label: {
+            // Interactive Liquid Glass Tone Selector Button
+            Button(action: {
+                FloatingPillHUD.shared.presentToneMenu()
+            }) {
                 HStack(spacing: 5) {
                     Text(pillState.currentTone.emoji)
-                        .font(.system(size: 11))
+                        .font(.system(size: 11.5))
                     
                     if pillState.currentTone == .translate {
                         Text("Translate → \(settings.targetLanguage.rawValue)")
@@ -234,10 +221,11 @@ public struct ControlPillBar: View {
                             .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                     }
                     
-                    Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 7, weight: .bold))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7.5, weight: .bold))
                         .foregroundStyle(.secondary)
                 }
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
                 .background(
@@ -249,8 +237,9 @@ public struct ControlPillBar: View {
                         )
                 )
             }
-            .menuStyle(.borderlessButton)
-            .help("Choose transformation tone")
+            .buttonStyle(.plain)
+            .fixedSize()
+            .help("Click to choose transformation tone")
             
             // Close / Dismiss Pill Button
             Button(action: { pillState.onCancelRequested?() }) {

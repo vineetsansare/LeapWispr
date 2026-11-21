@@ -116,7 +116,8 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         
-        // 1. Device Selection & Binding (Auto-bind Continuity iPhone if preferred)
+        // 1. Device Selection & Binding (Auto-bind Continuity iPhone ONLY if preferred and available)
+        var usedContinuity = false
         if AppSettings.shared.audioInputMode == .preferContinuity,
            let continuity = findContinuityDevice(),
            let unit = inputNode.audioUnit {
@@ -131,7 +132,8 @@ public final class AudioEngineManager: NSObject, ObservableObject {
             )
             if status == noErr {
                 self.activeInputDeviceName = continuity.name
-                print("[LeapWispr Audio] Successfully activated & bound Continuity Mic: \(continuity.name) (ID: \(devID))")
+                usedContinuity = true
+                print("[LeapWispr Audio] Bound Continuity Mic: \(continuity.name) (ID: \(devID))")
             } else {
                 updateActiveDeviceName()
                 print("[LeapWispr Audio] AudioUnitSetProperty failed (\(status)), fell back to: \(activeInputDeviceName)")
@@ -157,8 +159,10 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         )
         self.audioFile = file
         
+        var bufferCount = 0
         inputNode.installTap(onBus: 0, bufferSize: 2048, format: inputFormat) { [weak self] buffer, time in
             guard let self = self else { return }
+            bufferCount += 1
             
             // 1. Compute lightweight audio power for UI meter
             if let channelData = buffer.floatChannelData?[0] {
@@ -190,6 +194,92 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         try engine.start()
         self.audioEngine = engine
         self.isRecording = true
+        
+        // 4. Watchdog: If Continuity mic was bound but delivers 0 buffers in 400ms (iPhone asleep/standby),
+        // automatically fallback to system default microphone so user recording NEVER fails!
+        if usedContinuity {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self = self, self.isRecording else { return }
+                if bufferCount == 0 {
+                    print("[LeapWispr Audio] ⚠️ Continuity Mic delivered 0 buffers (iPhone in standby). Falling back to system default microphone...")
+                    self.fallbackToSystemDefaultMic()
+                }
+            }
+        }
+    }
+    
+    /// Automatic live fallback to MacBook Pro / system default microphone
+    private func fallbackToSystemDefaultMic() {
+        guard isRecording, let engine = audioEngine, let fileURL = currentRecordingURL else { return }
+        
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        
+        if let unit = engine.inputNode.audioUnit {
+            var defaultID: AudioDeviceID = 0
+            var defaultAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioHardwarePropertyDefaultInputDevice,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var sz = UInt32(MemoryLayout<AudioDeviceID>.size)
+            if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddr, 0, nil, &sz, &defaultID) == noErr {
+                AudioUnitSetProperty(
+                    unit,
+                    kAudioOutputUnitProperty_CurrentDevice,
+                    kAudioUnitScope_Global,
+                    0,
+                    &defaultID,
+                    sz
+                )
+            }
+        }
+        
+        updateActiveDeviceName()
+        let fallbackFormat = engine.inputNode.outputFormat(forBus: 0)
+        guard fallbackFormat.sampleRate > 0 else { return }
+        
+        do {
+            let newFile = try AVAudioFile(
+                forWriting: fileURL,
+                settings: fallbackFormat.settings,
+                commonFormat: fallbackFormat.commonFormat,
+                interleaved: fallbackFormat.isInterleaved
+            )
+            self.audioFile = newFile
+            
+            engine.inputNode.installTap(onBus: 0, bufferSize: 2048, format: fallbackFormat) { [weak self] buffer, time in
+                guard let self = self else { return }
+                
+                if let channelData = buffer.floatChannelData?[0] {
+                    let frameCount = Int(buffer.frameLength)
+                    var sumSquares: Float = 0.0
+                    let step = max(1, frameCount / 64)
+                    var count = 0
+                    for i in stride(from: 0, to: frameCount, by: step) {
+                        let sample = channelData[i]
+                        sumSquares += sample * sample
+                        count += 1
+                    }
+                    let rms = sqrt(sumSquares / Float(max(1, count)))
+                    let normalized = min(max(rms * 15.0, 0.0), 1.0)
+                    DispatchQueue.main.async {
+                        self.audioLevel = normalized
+                    }
+                }
+                
+                if let audioFile = self.audioFile {
+                    try? audioFile.write(from: buffer)
+                }
+                
+                self.onAudioBuffer?(buffer)
+            }
+            
+            try engine.start()
+            print("[LeapWispr Audio] ✅ Successfully switched to fallback mic: \(activeInputDeviceName)")
+        } catch {
+            print("[LeapWispr Audio] ❌ Failed to start fallback mic: \(error)")
+        }
     }
     
     public func stopRecording() -> URL? {

@@ -187,4 +187,51 @@ public final class FloatingPillHUD {
         
         panel.setFrame(NSRect(x: x, y: y, width: hudWidth, height: height), display: true)
     }
+    
+    /// Presents the native macOS Liquid Glass tone dropdown menu
+    public func presentToneMenu() {
+        guard let panel = window, let contentView = panel.contentView else { return }
+        
+        let menu = NSMenu(title: "Choose Tone")
+        for tone in ToneType.allCases {
+            let title: String
+            if tone == .translate {
+                title = "\(tone.emoji)  Translate → \(AppSettings.shared.targetLanguage.rawValue)"
+            } else {
+                title = "\(tone.emoji)  \(tone.displayName)"
+            }
+            
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(ToneMenuBridge.shared.toneMenuItemSelected(_:)),
+                keyEquivalent: ""
+            )
+            item.target = ToneMenuBridge.shared
+            item.representedObject = tone
+            if tone == FloatingPillState.shared.currentTone {
+                item.state = .on
+            }
+            menu.addItem(item)
+        }
+        
+        var clickLocation = NSPoint(x: panel.frame.width * 0.65, y: 16)
+        if let currentEvent = NSApp.currentEvent, currentEvent.window == panel {
+            clickLocation = currentEvent.locationInWindow
+        }
+        
+        menu.popUp(positioning: nil, at: clickLocation, in: contentView)
+    }
+}
+
+@MainActor
+public final class ToneMenuBridge: NSObject {
+    public static let shared = ToneMenuBridge()
+    
+    @objc public func toneMenuItemSelected(_ sender: NSMenuItem) {
+        guard let tone = sender.representedObject as? ToneType else { return }
+        FloatingPillState.shared.currentTone = tone
+        AppSettings.shared.selectedTone = tone
+        FloatingPillHUD.shared.onToneSelected?(tone)
+        FloatingPillState.shared.onToneSelected?(tone)
+    }
 }
