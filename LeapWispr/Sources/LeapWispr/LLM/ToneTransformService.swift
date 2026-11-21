@@ -108,27 +108,54 @@ public final class ToneTransformService: Sendable {
             ]
         ]
         
-        request.httpBody = try JSONSerialization.data(withJSONObject: jsonPayload)
+        let payloadData = try JSONSerialization.data(withJSONObject: jsonPayload)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let candidateModels = [
+            "gemini-3.5-flash-lite",
+            "gemini-3.8-flash",
+            "gemini-flash-latest",
+            "gemini-2.5-flash",
+            "gemini-1.5-flash"
+        ]
         
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            let errorText = String(data: data, encoding: .utf8) ?? "HTTP status error"
-            throw NSError(domain: "LeapWispr.LLM", code: 202, userInfo: [NSLocalizedDescriptionKey: "Gemini error: \(errorText)"])
+        var lastError: Error?
+        for model in candidateModels {
+            let urlString = "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)"
+            guard let url = URL(string: urlString) else { continue }
+            
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = 8.0
+            request.httpBody = payloadData
+            
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResponse = response as? HTTPURLResponse else { continue }
+                
+                if (200...299).contains(httpResponse.statusCode) {
+                    if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                       let candidates = json["candidates"] as? [[String: Any]],
+                       let firstCandidate = candidates.first,
+                       let content = firstCandidate["content"] as? [String: Any],
+                       let parts = content["parts"] as? [[String: Any]],
+                       let firstPart = parts.first,
+                       let text = firstPart["text"] as? String,
+                       !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        print("[LeapWispr LLM] Transformed successfully using model: \(model)")
+                        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                } else {
+                    let errStr = String(data: data, encoding: .utf8) ?? "status \(httpResponse.statusCode)"
+                    print("[LeapWispr LLM] Model \(model) failed: \(errStr). Trying fallback...")
+                }
+            } catch {
+                lastError = error
+                print("[LeapWispr LLM] Request failed for \(model): \(error.localizedDescription). Trying next...")
+            }
         }
         
-        // Parse Gemini Response
-        if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let candidates = json["candidates"] as? [[String: Any]],
-           let firstCandidate = candidates.first,
-           let content = firstCandidate["content"] as? [String: Any],
-           let parts = content["parts"] as? [[String: Any]],
-           let firstPart = parts.first,
-           let text = firstPart["text"] as? String {
-            return text.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        
-        throw NSError(domain: "LeapWispr.LLM", code: 203, userInfo: [NSLocalizedDescriptionKey: "Malformed Gemini response."])
+        throw lastError ?? NSError(domain: "LeapWispr.LLM", code: 204, userInfo: [NSLocalizedDescriptionKey: "All Gemini model candidates failed."])
     }
     
     // Robust offline transformation fallback
@@ -137,28 +164,65 @@ public final class ToneTransformService: Sendable {
         
         switch tone {
         case .professional:
+            let formalReplacements: [(String, String)] = [
+                ("\\bcan't\\b", "cannot"),
+                ("\\bwon't\\b", "will not"),
+                ("\\bdon't\\b", "do not"),
+                ("\\bdidn't\\b", "did not"),
+                ("\\bdoesn't\\b", "does not"),
+                ("\\bi'm\\b", "I am"),
+                ("\\bi'll\\b", "I will"),
+                ("\\bi've\\b", "I have"),
+                ("\\bwe're\\b", "we are"),
+                ("\\bthey're\\b", "they are"),
+                ("\\byou're\\b", "you are"),
+                ("\\bgonna\\b", "going to"),
+                ("\\bwanna\\b", "want to"),
+                ("\\bgotta\\b", "need to"),
+                ("\\bkinda\\b", "somewhat")
+            ]
+            for (pattern, replacement) in formalReplacements {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                    cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: NSRange(location: 0, length: cleaned.utf16.count), withTemplate: replacement)
+                }
+            }
             if !cleaned.hasSuffix(".") && !cleaned.hasSuffix("!") && !cleaned.hasSuffix("?") {
                 cleaned += "."
             }
             return cleaned
             
         case .casual:
+            let casualReplacements: [(String, String)] = [
+                ("\\bdo not\\b", "don't"),
+                ("\\bcannot\\b", "can't"),
+                ("\\bwill not\\b", "won't"),
+                ("\\bgoing to\\b", "gonna"),
+                ("\\bwant to\\b", "wanna")
+            ]
+            for (pattern, replacement) in casualReplacements {
+                if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                    cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: NSRange(location: 0, length: cleaned.utf16.count), withTemplate: replacement)
+                }
+            }
             return cleaned
             
         case .translate:
             return cleaned
             
         case .excited:
-            if cleaned.hasSuffix(".") {
-                cleaned.removeLast()
-            }
+            cleaned = cleaned.replacingOccurrences(of: "\\.+$", with: "", options: .regularExpression)
             if !cleaned.hasSuffix("!") {
                 cleaned += "!"
             }
             return cleaned
             
         case .devPrompt:
-            // Detect code patterns and wrap with backticks
+            let codeWords = ["function", "class", "const", "let", "var", "import", "export", "async", "await", "return", "api", "endpoint", "git", "commit", "push", "pull", "merge", "branch", "pr", "repo", "url", "json", "http", "id", "pid"]
+            for word in codeWords {
+                if let regex = try? NSRegularExpression(pattern: "\\b\(word)\\b", options: .caseInsensitive) {
+                    cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: NSRange(location: 0, length: cleaned.utf16.count), withTemplate: "`\(word)`")
+                }
+            }
             return cleaned
             
         case .bulletPoints:

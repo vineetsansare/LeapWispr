@@ -25,6 +25,14 @@ public final class DictationCoordinator: ObservableObject {
             self?.cycleToNextTone()
         }
         
+        pillHUD.onToneSelected = { [weak self] tone in
+            guard let self = self else { return }
+            self.activeTone = tone
+            self.settings.selectedTone = tone
+            self.pillHUD.update(status: FloatingPillState.shared.status, tone: tone)
+            print("[LeapWispr] User explicitly selected tone: \(tone.displayName)")
+        }
+        
         pillHUD.onCancelRequested = { [weak self] in
             self?.cancelDictation()
         }

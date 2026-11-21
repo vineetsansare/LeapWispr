@@ -11,6 +11,7 @@ public final class FloatingPillState: ObservableObject {
     @Published public var liveTranscript: String = ""
     
     public var onToneCycleRequested: (() -> Void)?
+    public var onToneSelected: ((ToneType) -> Void)?
     public var onCancelRequested: (() -> Void)?
     public var onStopRequested: (() -> Void)?
     

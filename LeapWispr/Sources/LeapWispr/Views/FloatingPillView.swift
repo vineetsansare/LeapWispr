@@ -54,23 +54,33 @@ public struct LiveTranscriptBubble: View {
                 .padding(.bottom, 2)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .frame(maxWidth: 420, alignment: .leading)
+        .padding(.vertical, 11)
+        .frame(maxWidth: 440, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.24), radius: 14, x: 0, y: 6)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
                         .strokeBorder(
                             LinearGradient(
-                                colors: [Color.white.opacity(0.35), Color.white.opacity(0.12)],
+                                stops: [
+                                    .init(color: Color.white.opacity(0.60), location: 0.0),
+                                    .init(color: Color.white.opacity(0.20), location: 0.35),
+                                    .init(color: Color.white.opacity(0.06), location: 0.70),
+                                    .init(color: Color.white.opacity(0.18), location: 1.0)
+                                ],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),
-                            lineWidth: 0.9
+                            lineWidth: 1.0
                         )
                 )
+                .shadow(color: Color.black.opacity(0.26), radius: 22, x: 0, y: 10)
+                .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
         )
     }
     
@@ -92,10 +102,10 @@ public struct LiveTranscriptBubble: View {
         // Normalized previous words
         let previousWords = words.dropLast().joined(separator: " ") + " "
         var prevStr = AttributedString(previousWords)
-        prevStr.foregroundColor = Color.white.opacity(0.82)
+        prevStr.foregroundColor = Color.white.opacity(0.85)
         prevStr.font = Font.system(size: 13, weight: .medium, design: .rounded)
         
-        // Highlighted latest active word
+        // Highlighted latest active word in electric cyan
         let latestWord = words.last!
         var lastStr = AttributedString(latestWord)
         lastStr.foregroundColor = Color.cyan
@@ -124,18 +134,32 @@ public struct ControlPillBar: View {
                 WaveformBarsView(level: audioManager.audioLevel)
                     .frame(width: 44, height: 16)
                 
-                // Done Button
+                // Done Button with Apple Gradient
                 Button(action: { pillState.onStopRequested?() }) {
                     HStack(spacing: 4) {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 10, weight: .bold))
+                            .font(.system(size: 9.5, weight: .black))
                         Text("Done")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
+                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
                     }
                     .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.blue))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [Color(red: 0.15, green: 0.55, blue: 1.0), Color(red: 0.0, green: 0.40, blue: 0.95)],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                            .shadow(color: Color.blue.opacity(0.35), radius: 6, x: 0, y: 2)
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(Color.white.opacity(0.3), lineWidth: 0.7)
+                            )
+                    )
                 }
                 .buttonStyle(.plain)
                 .help("Stop dictating and insert text")
@@ -179,52 +203,100 @@ public struct ControlPillBar: View {
             
             Divider()
                 .frame(height: 16)
-                .opacity(0.4)
+                .opacity(0.35)
             
-            // Interactive Tone Badge
-            Button(action: { pillState.onToneCycleRequested?() }) {
-                HStack(spacing: 4) {
+            // Interactive Liquid Glass Tone Dropdown Menu
+            Menu {
+                ForEach(ToneType.allCases) { tone in
+                    Button(action: {
+                        pillState.currentTone = tone
+                        settings.selectedTone = tone
+                        pillState.onToneSelected?(tone)
+                    }) {
+                        HStack {
+                            Text("\(tone.emoji) \(tone.displayName)")
+                            if pillState.currentTone == tone {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
                     Text(pillState.currentTone.emoji)
                         .font(.system(size: 11))
+                    
                     if pillState.currentTone == .translate {
                         Text("Translate → \(settings.targetLanguage.rawValue)")
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                     } else {
                         Text(pillState.currentTone.displayName)
-                            .font(.system(size: 11, weight: .semibold, design: .rounded))
+                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                     }
+                    
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 7, weight: .bold))
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
                 .background(
-                    Capsule().fill(Color.primary.opacity(0.08))
+                    Capsule()
+                        .fill(Color.primary.opacity(0.06))
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.8)
+                        )
                 )
             }
-            .buttonStyle(.plain)
-            .help("Click to change tone")
+            .menuStyle(.borderlessButton)
+            .help("Choose transformation tone")
             
-            // Close / Dismiss Pill Button (Always visible)
+            // Close / Dismiss Pill Button
             Button(action: { pillState.onCancelRequested?() }) {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.secondary)
+                ZStack {
+                    Circle()
+                        .fill(Color.primary.opacity(0.07))
+                        .frame(width: 22, height: 22)
+                        .overlay(
+                            Circle()
+                                .strokeBorder(Color.white.opacity(0.15), lineWidth: 0.8)
+                        )
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(Color.secondary)
+                }
             }
             .buttonStyle(.plain)
             .help(pillState.status == .listening ? "Cancel dictation and close pill" : "Close pill and dismiss")
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.2), radius: 14, x: 0, y: 6)
                 .overlay(
                     Capsule()
-                        .strokeBorder(Color.white.opacity(0.28), lineWidth: 0.8)
+                        .fill(Color.white.opacity(0.04))
                 )
+                .overlay(
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: Color.white.opacity(0.65), location: 0.0),
+                                    .init(color: Color.white.opacity(0.25), location: 0.30),
+                                    .init(color: Color.white.opacity(0.06), location: 0.65),
+                                    .init(color: Color.white.opacity(0.22), location: 1.0)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.0
+                        )
+                )
+                .shadow(color: Color.black.opacity(0.24), radius: 20, x: 0, y: 10)
+                .shadow(color: Color.black.opacity(0.12), radius: 4, x: 0, y: 2)
         )
     }
     

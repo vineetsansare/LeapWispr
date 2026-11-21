@@ -33,10 +33,11 @@ public final class FloatingPillHUD {
     private var dismissTimer: Timer?
     
     public var onToneCycleRequested: (() -> Void)?
+    public var onToneSelected: ((ToneType) -> Void)?
     public var onCancelRequested: (() -> Void)?
     public var onStopRequested: (() -> Void)?
     
-    private let hudWidth: CGFloat = 440
+    private let hudWidth: CGFloat = 480
     private var currentHeight: CGFloat = 54
     
     private init() {
@@ -50,6 +51,9 @@ public final class FloatingPillHUD {
         // Wire state callbacks
         FloatingPillState.shared.onToneCycleRequested = { [weak self] in
             self?.onToneCycleRequested?()
+        }
+        FloatingPillState.shared.onToneSelected = { [weak self] tone in
+            self?.onToneSelected?(tone)
         }
         FloatingPillState.shared.onCancelRequested = { [weak self] in
             self?.onCancelRequested?()
