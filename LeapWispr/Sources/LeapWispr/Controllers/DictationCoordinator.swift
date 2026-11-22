@@ -66,23 +66,28 @@ public final class DictationCoordinator: ObservableObject {
         
         // 3. Start audio capture and live streaming recognition
         do {
-            try audioManager.startRecording()
-            
             // Set spoken language locale for speech recognition
             let spokenLocale = settings.spokenLanguage.locale
             speechProvider.setLocale(spokenLocale)
             
-            // Start real-time live transcript streaming to the Floating Pill HUD
-            try? speechProvider.startLiveRecognition(locale: spokenLocale) { [weak self] liveText in
-                DispatchQueue.main.async {
-                    self?.pillHUD.updateLiveTranscript(liveText)
-                }
-            }
-            
-            // Pipe audio buffer stream to speech recognizer
+            // Pipe audio buffer stream directly to speech recognizer
             audioManager.onAudioBuffer = { [weak self] buffer in
                 self?.speechProvider.appendLiveAudioBuffer(buffer)
             }
+            
+            // Start real-time live transcript streaming to the Floating Pill HUD
+            do {
+                try speechProvider.startLiveRecognition(locale: spokenLocale) { [weak self] liveText in
+                    DispatchQueue.main.async {
+                        self?.pillHUD.updateLiveTranscript(liveText)
+                    }
+                }
+            } catch {
+                print("[LeapWispr] Live speech recognition start error: \(error.localizedDescription)")
+            }
+            
+            // Start hardware audio capture (now guaranteed to capture all buffers from frame 0)
+            try audioManager.startRecording()
             
             if settings.soundFeedback {
                 NSSound(named: "Tink")?.play()

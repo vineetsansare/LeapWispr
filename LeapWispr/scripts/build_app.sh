@@ -7,8 +7,8 @@ APP_DIR="${PROJECT_DIR}/build/LeapWispr.app"
 DEST_APP="/Applications/LeapWispr.app"
 
 echo "🛑 Stopping any existing LeapWispr processes..."
-killall LeapWispr 2>/dev/null || true
-sleep 0.5
+killall -9 LeapWispr 2>/dev/null || true
+sleep 1
 
 echo "🔨 Building LeapWispr Release Binary..."
 cd "${PROJECT_DIR}"

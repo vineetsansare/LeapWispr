@@ -73,6 +73,22 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         return nil
     }
     
+    /// Returns the system default input hardware device ID
+    public func getDefaultInputDeviceID() -> AudioDeviceID? {
+        var defaultDeviceAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var defaultDeviceId: AudioDeviceID = 0
+        var sz = UInt32(MemoryLayout<AudioDeviceID>.size)
+        if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultDeviceAddress, 0, nil, &sz, &defaultDeviceId) == noErr,
+           defaultDeviceId != 0 {
+            return defaultDeviceId
+        }
+        return nil
+    }
+    
     /// Retrieves the current active input device name
     public func updateActiveDeviceName() {
         if AppSettings.shared.audioInputMode == .preferContinuity,
@@ -81,14 +97,7 @@ public final class AudioEngineManager: NSObject, ObservableObject {
             return
         }
         
-        var defaultDeviceAddress = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDefaultInputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
-        )
-        var defaultDeviceId: AudioDeviceID = 0
-        var sz = UInt32(MemoryLayout<AudioDeviceID>.size)
-        if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultDeviceAddress, 0, nil, &sz, &defaultDeviceId) == noErr {
+        if let defaultDeviceId = getDefaultInputDeviceID() {
             var nameAddr = AudioObjectPropertyAddress(
                 mSelector: kAudioDevicePropertyDeviceNameCFString,
                 mScope: kAudioObjectPropertyScopeGlobal,
@@ -116,12 +125,24 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         let engine = AVAudioEngine()
         let inputNode = engine.inputNode
         
-        // 1. Device Selection & Binding (Auto-bind Continuity iPhone ONLY if preferred and available)
+        // 1. Resolve target input device (Continuity iPhone or System Default)
+        var targetDeviceID: AudioDeviceID = 0
         var usedContinuity = false
+        
         if AppSettings.shared.audioInputMode == .preferContinuity,
-           let continuity = findContinuityDevice(),
-           let unit = inputNode.audioUnit {
-            var devID = continuity.id
+           let continuity = findContinuityDevice() {
+            targetDeviceID = continuity.id
+            self.activeInputDeviceName = continuity.name
+            usedContinuity = true
+        } else if let defaultID = getDefaultInputDeviceID() {
+            targetDeviceID = defaultID
+            updateActiveDeviceName()
+        }
+        
+        // CRITICAL: Explicitly set the input device on the AudioUnit
+        // Without this call, macOS AUHAL defaults to the system default OUTPUT device (Speakers), which has 0 input channels!
+        if let unit = inputNode.audioUnit, targetDeviceID != 0 {
+            var devID = targetDeviceID
             let status = AudioUnitSetProperty(
                 unit,
                 kAudioOutputUnitProperty_CurrentDevice,
@@ -131,12 +152,21 @@ public final class AudioEngineManager: NSObject, ObservableObject {
                 UInt32(MemoryLayout<AudioDeviceID>.size)
             )
             if status == noErr {
-                self.activeInputDeviceName = continuity.name
-                usedContinuity = true
-                print("[LeapWispr Audio] Bound Continuity Mic: \(continuity.name) (ID: \(devID))")
+                print("[LeapWispr Audio] Successfully bound audio input device: \(activeInputDeviceName) (ID: \(devID))")
             } else {
-                updateActiveDeviceName()
-                print("[LeapWispr Audio] AudioUnitSetProperty failed (\(status)), fell back to: \(activeInputDeviceName)")
+                print("[LeapWispr Audio] AudioUnitSetProperty failed (\(status)) for device \(devID), attempting system default...")
+                if let fallbackID = getDefaultInputDeviceID() {
+                    var fbID = fallbackID
+                    AudioUnitSetProperty(
+                        unit,
+                        kAudioOutputUnitProperty_CurrentDevice,
+                        kAudioUnitScope_Global,
+                        0,
+                        &fbID,
+                        UInt32(MemoryLayout<AudioDeviceID>.size)
+                    )
+                    usedContinuity = false
+                }
             }
         } else {
             updateActiveDeviceName()
@@ -215,24 +245,16 @@ public final class AudioEngineManager: NSObject, ObservableObject {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         
-        if let unit = engine.inputNode.audioUnit {
-            var defaultID: AudioDeviceID = 0
-            var defaultAddr = AudioObjectPropertyAddress(
-                mSelector: kAudioHardwarePropertyDefaultInputDevice,
-                mScope: kAudioObjectPropertyScopeGlobal,
-                mElement: kAudioObjectPropertyElementMain
+        if let unit = engine.inputNode.audioUnit, let defaultID = getDefaultInputDeviceID() {
+            var devID = defaultID
+            AudioUnitSetProperty(
+                unit,
+                kAudioOutputUnitProperty_CurrentDevice,
+                kAudioUnitScope_Global,
+                0,
+                &devID,
+                UInt32(MemoryLayout<AudioDeviceID>.size)
             )
-            var sz = UInt32(MemoryLayout<AudioDeviceID>.size)
-            if AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &defaultAddr, 0, nil, &sz, &defaultID) == noErr {
-                AudioUnitSetProperty(
-                    unit,
-                    kAudioOutputUnitProperty_CurrentDevice,
-                    kAudioUnitScope_Global,
-                    0,
-                    &defaultID,
-                    sz
-                )
-            }
         }
         
         updateActiveDeviceName()
