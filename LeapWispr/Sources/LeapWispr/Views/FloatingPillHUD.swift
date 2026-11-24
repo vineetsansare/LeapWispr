@@ -73,6 +73,7 @@ public final class FloatingPillHUD {
         FloatingPillState.shared.status = status
         FloatingPillState.shared.currentTone = tone
         FloatingPillState.shared.liveTranscript = ""
+        FloatingPillState.shared.isTonePickerOpen = false
         
         currentHeight = 54
         positionHUD(height: 54)
@@ -119,16 +120,28 @@ public final class FloatingPillHUD {
     /// Streams live transcript to the overlay above the pill and expands window height upwards
     public func updateLiveTranscript(_ text: String) {
         FloatingPillState.shared.liveTranscript = text
+        updateHeightForCurrentState()
+    }
+    
+    /// Dynamically recalculates window height based on live transcript and tone picker states
+    public func updateHeightForCurrentState() {
+        let isMenuOpen = FloatingPillState.shared.isTonePickerOpen
+        let hasTranscript = !FloatingPillState.shared.liveTranscript.isEmpty
         
         let targetHeight: CGFloat
-        if text.isEmpty {
-            targetHeight = 54
-        } else if text.count <= 60 {
-            targetHeight = 106
-        } else if text.count <= 130 {
-            targetHeight = 138
+        if isMenuOpen {
+            targetHeight = hasTranscript ? 480 : 420
+        } else if hasTranscript {
+            let text = FloatingPillState.shared.liveTranscript
+            if text.count <= 60 {
+                targetHeight = 110
+            } else if text.count <= 130 {
+                targetHeight = 145
+            } else {
+                targetHeight = 185
+            }
         } else {
-            targetHeight = 176
+            targetHeight = 54
         }
         
         adjustHUDHeight(targetHeight: targetHeight)
@@ -162,19 +175,25 @@ public final class FloatingPillHUD {
         positionHUD(height: 54)
     }
     
-    private func adjustHUDHeight(targetHeight: CGFloat) {
+    public func adjustHUDHeight(targetHeight: CGFloat) {
         guard let panel = window, let screen = NSScreen.main else { return }
-        guard abs(currentHeight - targetHeight) > 3 else { return }
+        guard abs(currentHeight - targetHeight) > 2 else { return }
         
         currentHeight = targetHeight
-        let screenRect = screen.visibleFrame
-        let x = screenRect.origin.x + (screenRect.width - hudWidth) / 2
-        let y = screenRect.origin.y + 80 // Base y remains stationary, height grows upwards!
+        let currentFrame = panel.frame
+        let newX = currentFrame.origin.x
+        var newY = currentFrame.origin.y
+        
+        // Ensure the panel does not exceed the top of the visible screen
+        let screenMaxY = screen.visibleFrame.maxY
+        if newY + targetHeight > screenMaxY {
+            newY = screenMaxY - targetHeight
+        }
         
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.20
+            context.duration = 0.22
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(NSRect(x: x, y: y, width: hudWidth, height: targetHeight), display: true)
+            panel.animator().setFrame(NSRect(x: newX, y: newY, width: hudWidth, height: targetHeight), display: true)
         }
     }
     
@@ -186,52 +205,5 @@ public final class FloatingPillHUD {
         let y = screenRect.origin.y + 80
         
         panel.setFrame(NSRect(x: x, y: y, width: hudWidth, height: height), display: true)
-    }
-    
-    /// Presents the native macOS Liquid Glass tone dropdown menu
-    public func presentToneMenu() {
-        guard let panel = window, let contentView = panel.contentView else { return }
-        
-        let menu = NSMenu(title: "Choose Tone")
-        for tone in ToneType.allCases {
-            let title: String
-            if tone == .translate {
-                title = "\(tone.emoji)  Translate → \(AppSettings.shared.targetLanguage.rawValue)"
-            } else {
-                title = "\(tone.emoji)  \(tone.displayName)"
-            }
-            
-            let item = NSMenuItem(
-                title: title,
-                action: #selector(ToneMenuBridge.shared.toneMenuItemSelected(_:)),
-                keyEquivalent: ""
-            )
-            item.target = ToneMenuBridge.shared
-            item.representedObject = tone
-            if tone == FloatingPillState.shared.currentTone {
-                item.state = .on
-            }
-            menu.addItem(item)
-        }
-        
-        var clickLocation = NSPoint(x: panel.frame.width * 0.65, y: 16)
-        if let currentEvent = NSApp.currentEvent, currentEvent.window == panel {
-            clickLocation = currentEvent.locationInWindow
-        }
-        
-        menu.popUp(positioning: nil, at: clickLocation, in: contentView)
-    }
-}
-
-@MainActor
-public final class ToneMenuBridge: NSObject {
-    public static let shared = ToneMenuBridge()
-    
-    @objc public func toneMenuItemSelected(_ sender: NSMenuItem) {
-        guard let tone = sender.representedObject as? ToneType else { return }
-        FloatingPillState.shared.currentTone = tone
-        AppSettings.shared.selectedTone = tone
-        FloatingPillHUD.shared.onToneSelected?(tone)
-        FloatingPillState.shared.onToneSelected?(tone)
     }
 }

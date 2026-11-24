@@ -1,5 +1,7 @@
 import AppKit
 import SwiftUI
+import AVFoundation
+import Speech
 
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -178,6 +180,20 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             // Prompt accessibility on first launch
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 TextInjector.requestAccessibilityPermission()
+            }
+        }
+        
+        // Ensure Microphone permission is requested
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                print("[LeapWispr Permissions] Microphone access granted: \(granted)")
+            }
+        }
+        
+        // Ensure Speech Recognition permission is requested
+        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+            SFSpeechRecognizer.requestAuthorization { status in
+                print("[LeapWispr Permissions] Speech recognition auth status: \(status.rawValue)")
             }
         }
     }

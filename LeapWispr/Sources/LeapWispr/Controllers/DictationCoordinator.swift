@@ -1,6 +1,8 @@
 import Foundation
 import AppKit
 import Combine
+import Speech
+import AVFoundation
 
 @MainActor
 public final class DictationCoordinator: ObservableObject {
@@ -14,7 +16,7 @@ public final class DictationCoordinator: ObservableObject {
     private let speechProvider = AppleSpeechSTTProvider()
     
     private var currentAppContext: ActiveAppContext?
-    private var activeTone: ToneType = .professional
+    private var activeTone: ToneType = .autoContext
     
     private init() {
         setupHUDCallbacks()
@@ -57,11 +59,45 @@ public final class DictationCoordinator: ObservableObject {
         let appContext = contextInspector.getCurrentAppContext()
         self.currentAppContext = appContext
         
-        // 2. Determine tone (auto-adaptive or user selection)
-        if settings.autoContextTone && settings.selectedTone != .translate {
-            self.activeTone = appContext.suggestedTone
-        } else {
-            self.activeTone = settings.selectedTone
+        // Update detected app tone in pill state
+        FloatingPillState.shared.detectedAppTone = appContext.suggestedTone
+        self.activeTone = settings.selectedTone
+        
+        // 2. Permission Pre-Flight Checks
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        if micStatus == .denied || micStatus == .restricted {
+            pillHUD.show(status: .error("Mic access denied in System Settings"), tone: activeTone)
+            return
+        }
+        if micStatus == .notDetermined {
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        self?.startDictation()
+                    } else {
+                        self?.pillHUD.show(status: .error("Mic permission required"), tone: self?.activeTone ?? .professional)
+                    }
+                }
+            }
+            return
+        }
+        
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        if speechStatus == .denied || speechStatus == .restricted {
+            pillHUD.show(status: .error("Speech access denied in System Settings"), tone: activeTone)
+            return
+        }
+        if speechStatus == .notDetermined {
+            SFSpeechRecognizer.requestAuthorization { [weak self] status in
+                DispatchQueue.main.async {
+                    if status == .authorized {
+                        self?.startDictation()
+                    } else {
+                        self?.pillHUD.show(status: .error("Speech recognition permission required"), tone: self?.activeTone ?? .professional)
+                    }
+                }
+            }
+            return
         }
         
         // 3. Start audio capture and live streaming recognition
@@ -114,7 +150,10 @@ public final class DictationCoordinator: ObservableObject {
             return
         }
         
-        pillHUD.update(status: .processing("Polishing with \(activeTone.displayName)..."), tone: activeTone)
+        let appContext = self.currentAppContext ?? self.contextInspector.getCurrentAppContext()
+        let effectiveTone = (activeTone == .autoContext) ? appContext.suggestedTone : activeTone
+        
+        pillHUD.update(status: .processing("Polishing with \(effectiveTone.displayName)..."), tone: activeTone)
         
         Task {
             do {
@@ -137,10 +176,10 @@ public final class DictationCoordinator: ObservableObject {
                 }
                 
                 // 2. LLM Tone Transformation (Gemini Flash or High-Quality Heuristic)
-                let appContext = self.currentAppContext ?? self.contextInspector.getCurrentAppContext()
+                print("[LeapWispr] Polishing transcript with effective tone: \(effectiveTone.displayName) (selection: \(self.activeTone.displayName))...")
                 let polishedText = try await ToneTransformService.shared.transform(
                     rawTranscript: rawTranscript,
-                    tone: self.activeTone,
+                    tone: effectiveTone,
                     appContext: appContext,
                     apiKey: self.settings.geminiApiKey,
                     spokenLanguage: self.settings.spokenLanguage,

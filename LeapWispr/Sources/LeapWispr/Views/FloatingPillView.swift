@@ -18,8 +18,19 @@ public struct FloatingPillView: View {
         VStack(spacing: 8) {
             Spacer(minLength: 0)
             
-            // 1. Live Streaming Transcript Overlay Floating Directly Above the Pill
-            if !pillState.liveTranscript.isEmpty && pillState.status == .listening {
+            // 1. Native Liquid Glass Tone Selection Menu
+            if pillState.isTonePickerOpen {
+                LiquidGlassToneMenuView()
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.94, anchor: .bottom).combined(with: .opacity),
+                            removal: .scale(scale: 0.94, anchor: .bottom).combined(with: .opacity)
+                        )
+                    )
+            }
+            
+            // 2. Live Streaming Transcript Overlay Floating Directly Above the Pill
+            if !pillState.liveTranscript.isEmpty && pillState.status == .listening && !pillState.isTonePickerOpen {
                 LiveTranscriptBubble(transcript: pillState.liveTranscript)
                     .transition(
                         .asymmetric(
@@ -29,10 +40,11 @@ public struct FloatingPillView: View {
                     )
             }
             
-            // 2. Sleek Compact Control Pill Bar
+            // 3. Sleek Compact Control Pill Bar
             ControlPillBar()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .animation(.spring(response: 0.30, dampingFraction: 0.78), value: pillState.isTonePickerOpen)
         .animation(.spring(response: 0.32, dampingFraction: 0.78), value: pillState.liveTranscript.isEmpty)
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: pillState.status)
     }
@@ -207,33 +219,29 @@ public struct ControlPillBar: View {
             
             // Interactive Liquid Glass Tone Selector Button
             Button(action: {
-                FloatingPillHUD.shared.presentToneMenu()
+                pillState.toggleTonePicker()
             }) {
                 HStack(spacing: 5) {
-                    Text(pillState.currentTone.emoji)
+                    Text(toneButtonEmoji)
                         .font(.system(size: 11.5))
                     
-                    if pillState.currentTone == .translate {
-                        Text("Translate → \(settings.targetLanguage.rawValue)")
-                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                    } else {
-                        Text(pillState.currentTone.displayName)
-                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
-                    }
+                    Text(toneButtonLabel)
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
                     
-                    Image(systemName: "chevron.down")
+                    Image(systemName: pillState.isTonePickerOpen ? "chevron.up" : "chevron.down")
                         .font(.system(size: 7.5, weight: .bold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(pillState.isTonePickerOpen ? Color.blue : Color.secondary)
                 }
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
                 .background(
                     Capsule()
-                        .fill(Color.primary.opacity(0.06))
+                        .fill(pillState.isTonePickerOpen ? Color.blue.opacity(0.18) : Color.primary.opacity(0.06))
                         .overlay(
                             Capsule()
-                                .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.8)
+                                .strokeBorder(pillState.isTonePickerOpen ? Color.blue.opacity(0.4) : Color.white.opacity(0.18), lineWidth: 0.8)
                         )
                 )
             }
@@ -324,6 +332,168 @@ public struct ControlPillBar: View {
                 .fill(Color.gray.opacity(0.5))
                 .frame(width: 8, height: 8)
         }
+    }
+    
+    private var toneButtonEmoji: String {
+        if pillState.currentTone == .autoContext {
+            return "🪄"
+        }
+        return pillState.currentTone.emoji
+    }
+    
+    private var toneButtonLabel: String {
+        if pillState.currentTone == .autoContext {
+            return "Auto (\(pillState.detectedAppTone.displayName))"
+        } else if pillState.currentTone == .translate {
+            return "Translate → \(settings.targetLanguage.rawValue)"
+        } else {
+            return pillState.currentTone.displayName
+        }
+    }
+}
+
+// MARK: - Native Liquid Glass Tone Selection Menu
+
+public struct LiquidGlassToneMenuView: View {
+    @ObservedObject var settings = AppSettings.shared
+    @ObservedObject var pillState = FloatingPillState.shared
+    
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Header
+            HStack {
+                HStack(spacing: 5) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.accentColor)
+                    Text("TRANSFORMATION TONE")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                
+                Spacer()
+                
+                Button(action: {
+                    pillState.toggleTonePicker()
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary.opacity(0.7))
+                }
+                .buttonStyle(.plain)
+                .help("Close tone menu")
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 9)
+            .padding(.bottom, 2)
+            
+            // Tone Options
+            VStack(spacing: 2) {
+                ForEach(ToneType.allCases) { tone in
+                    ToneMenuRow(
+                        tone: tone,
+                        isSelected: pillState.currentTone == tone,
+                        detectedAppName: pillState.detectedAppTone.displayName,
+                        targetLanguage: settings.targetLanguage.rawValue
+                    ) {
+                        pillState.selectTone(tone)
+                    }
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.bottom, 8)
+        }
+        .frame(width: 330)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.04))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                stops: [
+                                    .init(color: Color.white.opacity(0.65), location: 0.0),
+                                    .init(color: Color.white.opacity(0.25), location: 0.35),
+                                    .init(color: Color.white.opacity(0.08), location: 0.70),
+                                    .init(color: Color.white.opacity(0.22), location: 1.0)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1.0
+                        )
+                )
+                .shadow(color: Color.black.opacity(0.32), radius: 24, x: 0, y: 12)
+                .shadow(color: Color.black.opacity(0.14), radius: 6, x: 0, y: 2)
+        )
+    }
+}
+
+public struct ToneMenuRow: View {
+    let tone: ToneType
+    let isSelected: Bool
+    let detectedAppName: String
+    let targetLanguage: String
+    let onSelect: () -> Void
+    @State private var isHovered = false
+    
+    public var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 8) {
+                Text(tone.emoji)
+                    .font(.system(size: 13))
+                    .frame(width: 20, alignment: .center)
+                
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 5) {
+                        Text(rowTitle)
+                            .font(.system(size: 11.5, weight: isSelected ? .bold : .semibold, design: .rounded))
+                            .foregroundStyle(isSelected ? Color.blue : Color.primary)
+                        
+                        if tone == .autoContext {
+                            Text("Active: \(detectedAppName)")
+                                .font(.system(size: 8.5, weight: .bold))
+                                .foregroundStyle(Color.blue)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Color.blue.opacity(0.12)))
+                        }
+                    }
+                    
+                    Text(tone.summaryDescription)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Color.blue)
+                }
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 4.5)
+            .background(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(isSelected ? Color.blue.opacity(0.12) : (isHovered ? Color.primary.opacity(0.06) : Color.clear))
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+    
+    private var rowTitle: String {
+        if tone == .translate {
+            return "Translate → \(targetLanguage)"
+        }
+        return tone.displayName
     }
 }
 

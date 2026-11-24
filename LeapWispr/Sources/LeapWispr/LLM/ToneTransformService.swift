@@ -21,12 +21,14 @@ public final class ToneTransformService: Sendable {
             return basicCleanup(cleanInput)
         }
         
+        let targetTone = (tone == .autoContext) ? appContext.suggestedTone : tone
+        
         // If an API key is provided, call Gemini Flash API
         if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             do {
                 return try await callGeminiFlash(
                     rawText: cleanInput,
-                    tone: tone,
+                    tone: targetTone,
                     appContext: appContext,
                     apiKey: apiKey,
                     spokenLanguage: spokenLanguage,
@@ -38,7 +40,7 @@ public final class ToneTransformService: Sendable {
         }
         
         // Offline / No API Key fallback: high quality local heuristic cleanup
-        return offlineTransform(rawText: cleanInput, tone: tone, appContext: appContext)
+        return offlineTransform(rawText: cleanInput, tone: targetTone, appContext: appContext)
     }
     
     private func callGeminiFlash(
@@ -49,16 +51,6 @@ public final class ToneTransformService: Sendable {
         spokenLanguage: SpokenLanguage = .auto,
         targetLanguage: TargetLanguage = .english
     ) async throws -> String {
-        let urlString = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=\(apiKey)"
-        guard let url = URL(string: urlString) else {
-            throw NSError(domain: "LeapWispr.LLM", code: 201, userInfo: [NSLocalizedDescriptionKey: "Invalid Gemini URL."])
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 10.0
-        
         var systemInstruction = tone.systemPrompt
         if tone == .translate {
             let target = targetLanguage.displayName
@@ -91,7 +83,7 @@ public final class ToneTransformService: Sendable {
         \(rawText)
         \"\"\"
         
-        Output ONLY the final polished text without quotes or explanation:
+        Output strictly ONLY the final polished text without quotes or explanation:
         """
         
         let jsonPayload: [String: Any] = [
@@ -103,7 +95,7 @@ public final class ToneTransformService: Sendable {
                 ]
             ],
             "generationConfig": [
-                "temperature": 0.3,
+                "temperature": 0.25,
                 "maxOutputTokens": 1024
             ]
         ]
@@ -113,9 +105,7 @@ public final class ToneTransformService: Sendable {
         let candidateModels = [
             "gemini-3.5-flash-lite",
             "gemini-3.8-flash",
-            "gemini-flash-latest",
-            "gemini-2.5-flash",
-            "gemini-1.5-flash"
+            "gemini-flash-latest"
         ]
         
         var lastError: Error?
@@ -126,7 +116,7 @@ public final class ToneTransformService: Sendable {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.timeoutInterval = 8.0
+            request.timeoutInterval = 4.0
             request.httpBody = payloadData
             
             do {
@@ -138,12 +128,13 @@ public final class ToneTransformService: Sendable {
                        let candidates = json["candidates"] as? [[String: Any]],
                        let firstCandidate = candidates.first,
                        let content = firstCandidate["content"] as? [String: Any],
-                       let parts = content["parts"] as? [[String: Any]],
-                       let firstPart = parts.first,
-                       let text = firstPart["text"] as? String,
-                       !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        print("[LeapWispr LLM] Transformed successfully using model: \(model)")
-                        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+                       let parts = content["parts"] as? [[String: Any]] {
+                        let combined = parts.compactMap { $0["text"] as? String }.joined()
+                        let clean = combined.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !clean.isEmpty {
+                            print("[LeapWispr LLM] Transformed successfully using model: \(model)")
+                            return clean
+                        }
                     }
                 } else {
                     let errStr = String(data: data, encoding: .utf8) ?? "status \(httpResponse.statusCode)"
@@ -160,11 +151,18 @@ public final class ToneTransformService: Sendable {
     
     // Robust offline transformation fallback
     public func offlineTransform(rawText: String, tone: ToneType, appContext: ActiveAppContext) -> String {
+        let actualTone = (tone == .autoContext) ? appContext.suggestedTone : tone
         var cleaned = basicCleanup(rawText)
         
-        switch tone {
+        switch actualTone {
+        case .autoContext:
+            return offlineTransform(rawText: rawText, tone: appContext.suggestedTone, appContext: appContext)
+            
         case .professional:
             let formalReplacements: [(String, String)] = [
+                ("\\bhey guys\\b", "Hello everyone"),
+                ("\\bwhat's up\\b", "how are you doing"),
+                ("\\bwhats up\\b", "how are you doing"),
                 ("\\bcan't\\b", "cannot"),
                 ("\\bwon't\\b", "will not"),
                 ("\\bdon't\\b", "do not"),
@@ -179,12 +177,20 @@ public final class ToneTransformService: Sendable {
                 ("\\bgonna\\b", "going to"),
                 ("\\bwanna\\b", "want to"),
                 ("\\bgotta\\b", "need to"),
-                ("\\bkinda\\b", "somewhat")
+                ("\\bkinda\\b", "somewhat"),
+                ("\\bpls\\b", "please"),
+                ("\\bplz\\b", "please"),
+                ("\\bthx\\b", "thank you"),
+                ("\\basap\\b", "as soon as possible")
             ]
             for (pattern, replacement) in formalReplacements {
                 if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
                     cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: NSRange(location: 0, length: cleaned.utf16.count), withTemplate: replacement)
                 }
+            }
+            if !cleaned.isEmpty {
+                let first = cleaned.prefix(1).uppercased()
+                cleaned = first + cleaned.dropFirst()
             }
             if !cleaned.hasSuffix(".") && !cleaned.hasSuffix("!") && !cleaned.hasSuffix("?") {
                 cleaned += "."
@@ -197,12 +203,19 @@ public final class ToneTransformService: Sendable {
                 ("\\bcannot\\b", "can't"),
                 ("\\bwill not\\b", "won't"),
                 ("\\bgoing to\\b", "gonna"),
-                ("\\bwant to\\b", "wanna")
+                ("\\bwant to\\b", "wanna"),
+                ("\\bwould like to\\b", "let's"),
+                ("\\bcould you please\\b", "can you"),
+                ("\\bin regard to\\b", "about")
             ]
             for (pattern, replacement) in casualReplacements {
                 if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
                     cleaned = regex.stringByReplacingMatches(in: cleaned, options: [], range: NSRange(location: 0, length: cleaned.utf16.count), withTemplate: replacement)
                 }
+            }
+            if !cleaned.isEmpty {
+                let first = cleaned.prefix(1).uppercased()
+                cleaned = first + cleaned.dropFirst()
             }
             return cleaned
             
@@ -231,9 +244,9 @@ public final class ToneTransformService: Sendable {
                 .filter { !$0.isEmpty }
             
             if sentences.count > 1 {
-                return sentences.map { "- \($0)" }.joined(separator: "\n")
+                return sentences.map { "- \($0.prefix(1).uppercased() + $0.dropFirst())" }.joined(separator: "\n")
             } else {
-                return "- \(cleaned)"
+                return "- \(cleaned.prefix(1).uppercased() + cleaned.dropFirst())"
             }
             
         case .raw:

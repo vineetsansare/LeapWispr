@@ -156,7 +156,10 @@ public struct MenuBarPopoverView: View {
             
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
                 ForEach(ToneType.allCases) { tone in
-                    Button(action: { settings.selectedTone = tone }) {
+                    Button(action: {
+                        settings.selectedTone = tone
+                        settings.autoContextTone = (tone == .autoContext)
+                    }) {
                         HStack(spacing: 6) {
                             Text(tone.emoji)
                                 .font(.system(size: 12))
@@ -265,7 +268,17 @@ public struct MenuBarPopoverView: View {
     }
     
     private var autoContextToggle: some View {
-        Toggle(isOn: $settings.autoContextTone) {
+        Toggle(isOn: Binding(
+            get: { settings.selectedTone == .autoContext || settings.autoContextTone },
+            set: { enabled in
+                settings.autoContextTone = enabled
+                if enabled {
+                    settings.selectedTone = .autoContext
+                } else if settings.selectedTone == .autoContext {
+                    settings.selectedTone = .professional
+                }
+            }
+        )) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Smart Context Adaptation")
                     .font(.system(size: 12, weight: .semibold))

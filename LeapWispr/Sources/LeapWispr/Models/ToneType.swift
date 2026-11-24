@@ -1,6 +1,7 @@
 import Foundation
 
 public enum ToneType: String, CaseIterable, Identifiable, Codable {
+    case autoContext = "auto_context"
     case professional = "professional"
     case casual = "casual"
     case translate = "translate"
@@ -13,6 +14,7 @@ public enum ToneType: String, CaseIterable, Identifiable, Codable {
     
     public var displayName: String {
         switch self {
+        case .autoContext: return "Auto Context"
         case .professional: return "Professional"
         case .casual: return "Casual"
         case .translate: return "Translate"
@@ -25,6 +27,7 @@ public enum ToneType: String, CaseIterable, Identifiable, Codable {
     
     public var icon: String {
         switch self {
+        case .autoContext: return "sparkles"
         case .professional: return "briefcase.fill"
         case .casual: return "bubble.left.and.bubble.right.fill"
         case .translate: return "globe"
@@ -37,6 +40,7 @@ public enum ToneType: String, CaseIterable, Identifiable, Codable {
     
     public var emoji: String {
         switch self {
+        case .autoContext: return "🪄"
         case .professional: return "💼"
         case .casual: return "💬"
         case .translate: return "🌍"
@@ -47,8 +51,23 @@ public enum ToneType: String, CaseIterable, Identifiable, Codable {
         }
     }
     
+    public var summaryDescription: String {
+        switch self {
+        case .autoContext: return "Auto-detects active app tone"
+        case .professional: return "Polished business writing"
+        case .casual: return "Friendly for Slack & messaging"
+        case .translate: return "Multilingual to English translation"
+        case .devPrompt: return "Formatted for AI coding & terminal"
+        case .bulletPoints: return "Structured list & action items"
+        case .excited: return "Energetic & high-impact phrasing"
+        case .raw: return "Raw transcript with light cleanup"
+        }
+    }
+    
     public var systemPrompt: String {
         switch self {
+        case .autoContext:
+            return "" // Handled dynamically in DictationCoordinator
         case .professional:
             return """
             Rewrite the spoken transcript into clean, polished, professional business writing.
