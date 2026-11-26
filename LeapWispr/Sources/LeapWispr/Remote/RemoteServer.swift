@@ -1,12 +1,37 @@
 import Foundation
 import Network
 import AppKit
+import Darwin
 
 public final class RemoteServer: @unchecked Sendable {
     public static let shared = RemoteServer()
     
     private var listener: NWListener?
-    private let port: UInt16 = 4545
+    public let port: UInt16 = 4545
+    
+    public var localIPAddress: String {
+        var address: String = "localhost"
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return address }
+        for ptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
+            let flags = Int32(ptr.pointee.ifa_flags)
+            let addr = ptr.pointee.ifa_addr.pointee
+            if (flags & (IFF_UP | IFF_RUNNING | IFF_LOOPBACK)) == (IFF_UP | IFF_RUNNING) {
+                if addr.sa_family == UInt8(AF_INET) {
+                    var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+                    if getnameinfo(ptr.pointee.ifa_addr, socklen_t(ptr.pointee.ifa_addr.pointee.sa_len), &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST) == 0 {
+                        let ip = String(cString: hostname)
+                        if !ip.starts(with: "127.") {
+                            address = ip
+                            break
+                        }
+                    }
+                }
+            }
+        }
+        freeifaddrs(ifaddr)
+        return address
+    }
     
     private init() {}
     
@@ -86,6 +111,8 @@ public final class RemoteServer: @unchecked Sendable {
                    let toneVal = queryItem.value,
                    let tone = ToneType(rawValue: toneVal) {
                     AppSettings.shared.selectedTone = tone
+                    FloatingPillState.shared.currentTone = tone
+                    FloatingPillHUD.shared.onToneSelected?(tone)
                 }
                 let currentTone = AppSettings.shared.selectedTone.rawValue
                 let json = "{\"status\":\"ok\",\"tone\":\"\(currentTone)\"}"
@@ -184,11 +211,14 @@ public final class RemoteServer: @unchecked Sendable {
                 </div>
                 
                 <div class="tones">
-                    <button class="tone-btn" onclick="setTone('professional', this)">💼 Professional</button>
-                    <button class="tone-btn active" onclick="setTone('casual', this)">💬 Casual</button>
-                    <button class="tone-btn" onclick="setTone('excited', this)">🚀 Excited</button>
-                    <button class="tone-btn" onclick="setTone('dev_prompt', this)">💻 Dev Prompt</button>
-                    <button class="tone-btn" onclick="setTone('bullet_points', this)">📝 Bullets</button>
+                    <button class="tone-btn" data-tone="auto_context" onclick="setTone('auto_context', this)">🪄 Auto</button>
+                    <button class="tone-btn" data-tone="professional" onclick="setTone('professional', this)">💼 Professional</button>
+                    <button class="tone-btn" data-tone="casual" onclick="setTone('casual', this)">💬 Casual</button>
+                    <button class="tone-btn" data-tone="translate" onclick="setTone('translate', this)">🌍 Translate</button>
+                    <button class="tone-btn" data-tone="dev_prompt" onclick="setTone('dev_prompt', this)">💻 Dev</button>
+                    <button class="tone-btn" data-tone="bullet_points" onclick="setTone('bullet_points', this)">📝 Bullets</button>
+                    <button class="tone-btn" data-tone="excited" onclick="setTone('excited', this)">🚀 Excited</button>
+                    <button class="tone-btn" data-tone="raw" onclick="setTone('raw', this)">🎙️ Raw</button>
                 </div>
             </div>
 
@@ -198,11 +228,12 @@ public final class RemoteServer: @unchecked Sendable {
             </div>
 
             <div class="footer">
-                iPhone 14 Pro Max • Wireless Remote Controller • Clamshell Ready
+                iPhone • Wireless Remote Controller • Clamshell Ready
             </div>
 
             <script>
                 let isRecording = false;
+                let activeTone = '';
                 
                 function toggleMic() {
                     if (navigator.vibrate) navigator.vibrate(60);
@@ -213,12 +244,13 @@ public final class RemoteServer: @unchecked Sendable {
 
                 function setTone(tone, btn) {
                     if (navigator.vibrate) navigator.vibrate(35);
+                    activeTone = tone;
                     document.querySelectorAll('.tone-btn').forEach(b => b.classList.remove('active'));
-                    btn.classList.add('active');
+                    if (btn) btn.classList.add('active');
                     fetch('/api/tone?type=' + tone);
                 }
 
-                function updateState(recording) {
+                function updateState(recording, tone) {
                     isRecording = recording;
                     const btn = document.getElementById('micBtn');
                     const label = document.getElementById('micLabel');
@@ -238,13 +270,21 @@ public final class RemoteServer: @unchecked Sendable {
                         dot.classList.remove('live');
                         statusText.innerText = 'Connected to Mac';
                     }
+                    
+                    if (tone && tone !== activeTone) {
+                        activeTone = tone;
+                        document.querySelectorAll('.tone-btn').forEach(b => {
+                            if (b.dataset.tone === tone) b.classList.add('active');
+                            else b.classList.remove('active');
+                        });
+                    }
                 }
 
                 setInterval(() => {
                     fetch('/api/status')
                         .then(r => r.json())
                         .then(data => {
-                            if (data.recording !== isRecording) updateState(data.recording);
+                            updateState(data.recording, data.tone);
                         }).catch(() => {});
                 }, 800);
             </script>

@@ -35,6 +35,9 @@ public struct MenuBarPopoverView: View {
                     // Productivity Stats Card
                     statsCard
                     
+                    // iPhone Wireless Remote Card
+                    phoneRemoteCard
+                    
                     // Recent Dictations
                     if !settings.history.isEmpty {
                         recentSection
@@ -320,6 +323,47 @@ public struct MenuBarPopoverView: View {
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(Color.primary.opacity(0.04))
+        )
+    }
+    
+    private var phoneRemoteCard: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "iphone.gen3")
+                .font(.system(size: 16))
+                .foregroundStyle(Color.accentColor)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text("iPhone Wireless Remote")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                Text("http://\(RemoteServer.shared.localIPAddress):4545")
+                    .font(.system(size: 9.5, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            
+            Spacer()
+            
+            Button(action: {
+                let urlString = "http://\(RemoteServer.shared.localIPAddress):4545"
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(urlString, forType: .string)
+            }) {
+                HStack(spacing: 3) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 9.5))
+                    Text("Copy")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3.5)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.06)))
+            }
+            .buttonStyle(.plain)
+            .help("Copy URL to open in Safari on iPhone")
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.primary.opacity(0.03))
         )
     }
     
